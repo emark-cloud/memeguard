@@ -91,21 +91,23 @@ The agent monitors in real time:
 
 Concrete signals, not abstract AI. Each scored independently, combined into an overall green/amber/red grade.
 
-| Signal | What It Checks | Weight |
-|--------|----------------|--------|
-| **Creator history** | Has this wallet launched tokens before? Did those tokens dump >80% within 24h? How many prior launches? | High |
-| **Bonding curve velocity** | Is the curve filling unusually fast (suggesting coordinated/bot buying)? Compare fill rate to historical average. | High |
-| **Holder concentration** | Top 5 wallets holding >X% of supply. Single wallet >20% = red flag. | High |
-| **Liquidity depth & age** | Is there enough liquidity to exit? Has liquidity been present for <5 minutes? | Medium |
-| **Tax token flags** | Does the token use Four.meme's TaxToken contract? What are the fee parameters? Unusual sell tax = danger. | Medium |
-| **Volume consistency** | Is volume real or wash-traded? Look for suspiciously regular buy patterns. | Medium |
-| **Social signal** | Does the token have linked social accounts? Are they active? Sentiment positive or pump-language? | Low |
-| **Market context** | Fear & Greed Index, BNB 24h trend. Bear market = higher bar for entry. | Low |
+| # | Signal | What It Checks | Weight | Data Source |
+|---|--------|----------------|--------|-------------|
+| 1 | **Creator history** | Has this wallet launched tokens before? Did those tokens dump? How many prior launches? | HIGH (3) | Web3.py: TokenManager2 TokenCreate events |
+| 2 | **Holder concentration** | Top 5 wallets holding >X% of supply. Single wallet >20% = red flag. Unique holder count. | HIGH (3) | Web3.py: ERC20 Transfer events + balanceOf |
+| 3 | **Bonding curve velocity** | Is the curve filling unusually fast (suggesting coordinated/bot buying)? BNB/min fill rate. | HIGH (3) | Web3.py: TokenManagerHelper3.getTokenInfo() |
+| 4 | **Liquidity depth & age** | Is there enough liquidity to exit? Has liquidity been present for <5 minutes? USD value. | MEDIUM (2) | Web3.py: getTokenInfo() funds + liquidityAdded |
+| 5 | **Tax token flags** | Does the token use Four.meme's TaxToken contract? What are the fee parameters? | MEDIUM (2) | Web3.py: TaxToken ABI (feeRate, allocation rates) |
+| 6 | **Volume consistency** | Is volume real or wash-traded? Look for suspiciously regular buy patterns. | MEDIUM (2) | Four.meme CLI: events (TokenPurchase/Sale) |
+| 7 | **Social signal** | Does the token have linked social accounts? Description sentiment analysis. | LOW (1) | Four.meme API + VADER sentiment |
+| 8 | **Market context** | Fear & Greed Index, BNB 24h trend. Bear market = higher bar for entry. | LOW (1) | CoinGecko + Alternative.me Fear & Greed |
 
-**Output:**
+**Scoring:**
 
-- Overall grade: Green (low risk) / Amber (moderate) / Red (high risk / likely rug)
-- One-line explanation: "Creator has launched 4 tokens in 48h, all dumped >90%"
+- Each signal scores 0–10, multiplied by weight (1–3)
+- Weighted percentage: `sum(score * weight) / sum(10 * weight) * 100`
+- Grades: **GREEN** (>=65%), **AMBER** (40–65%), **RED** (<40%)
+- One-line explanation per signal, plus optional LLM-generated rationale
 - Primary risk factor highlighted
 
 ### C. Persona-Based Action Engine
@@ -148,12 +150,11 @@ Hard caps that cannot be exceeded regardless of approval mode:
 
 ### F. Wallet & Execution
 
-- Connect existing wallet (MetaMask, WalletConnect)
-- Or generate a hot wallet within the app (encrypted local storage)
-- Prepare swap transactions with full preview (token, amount, slippage, estimated gas)
-- Request wallet signature
-- Execute after approval
-- Optionally register wallet as ERC-8004 agent via Four.meme's `AgentIdentifier` contract (enables insider phase access)
+- Connect existing BSC wallet via wagmi + viem (MetaMask, injected wallets)
+- Agent uses a dedicated hot wallet (PRIVATE_KEY in .env) for trade execution via Four.meme CLI
+- Prepare swap transactions with full preview (token, amount, slippage, estimated output)
+- User approves via frontend → backend executes via CLI subprocess
+- Optionally register agent wallet as ERC-8004 via Four.meme CLI (`fourmeme 8004-register`)
 
 ### G. "What I Avoided" Log
 
@@ -312,70 +313,88 @@ User opens "What I Avoided" tab
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                        React Frontend                            │
+│                     React Frontend (Vite + Tailwind)              │
 │  Dashboard │ Opportunity Detail │ Positions │ Avoided │ Settings │
 │                                                                  │
-│  Wallet Connection (wagmi/ethers)                                │
-│  Approval Modal → Signature Request → TX Execution               │
+│  Wallet Connection (wagmi + viem)                                │
+│  Approval Modal → Approve/Reject → WebSocket Live Updates        │
 └──────────────────────────┬───────────────────────────────────────┘
                            │ REST API + WebSocket (live feed)
 ┌──────────────────────────▼───────────────────────────────────────┐
 │                      FastAPI Backend                              │
 │                                                                  │
 │  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐      │
-│  │ Signal       │  │ Risk Scoring │  │ Persona Action     │      │
-│  │ Ingestion    │──│ Engine       │──│ Engine             │      │
-│  │ Service      │  │ (6 signals)  │  │ (Consv/Mom/Snipe)  │      │
+│  │ Scanner      │  │ Risk Scoring │  │ Persona Action     │      │
+│  │ Service      │──│ Engine       │──│ Engine             │      │
+│  │ (30s poll)   │  │ (8 signals)  │  │ (Consv/Mom/Snipe)  │      │
 │  └──────┬──────┘  └──────┬───────┘  └────────┬───────────┘      │
 │         │                │                    │                   │
 │  ┌──────▼──────┐  ┌──────▼───────┐  ┌────────▼───────────┐      │
-│  │ Four.meme   │  │ LLM Service  │  │ Transaction        │      │
-│  │ API Client  │  │ (Claude API) │  │ Builder            │      │
+│  │ Four.meme   │  │ LLM Service  │  │ Trade Executor      │      │
+│  │ REST Client │  │ (Gemini)     │  │ (via CLI subprocess) │      │
 │  └─────────────┘  └──────────────┘  └────────────────────┘      │
 │                                                                  │
 │  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐      │
-│  │ BSC Web3    │  │ Avoided Log  │  │ Override Tracker    │      │
-│  │ Provider    │  │ Service      │  │ (Behavioral Nudge)  │      │
+│  │ BSC Web3.py │  │ Avoided Log  │  │ Override Tracker    │      │
+│  │ (on-chain)  │  │ Service      │  │ (Behavioral Nudge)  │      │
+│  └─────────────┘  └──────────────┘  └────────────────────┘      │
+│                                                                  │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐      │
+│  │ Market API  │  │ Four.meme    │  │ Approval Gate       │      │
+│  │ (CoinGecko) │  │ CLI Wrapper  │  │ (4 modes)           │      │
 │  └─────────────┘  └──────────────┘  └────────────────────┘      │
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────┐      │
-│  │              SQLite (local-first storage)               │      │
+│  │              SQLite (local-first, aiosqlite)            │      │
 │  │  tokens │ scans │ positions │ trades │ avoided │ config │      │
+│  │  activity │ token_snapshots │ overrides │ pending_actions│     │
 │  └────────────────────────────────────────────────────────┘      │
 └──────────────────────────────────────────────────────────────────┘
                            │
-                    BSC (BNB Chain)
-              ┌────────────┼────────────┐
-              │            │            │
-        Four.meme    PancakeSwap   AgentIdentifier
-        Contracts    Router        (ERC-8004)
+          ┌────────────────┼────────────────┐
+          │                │                │
+   Four.meme CLI     Web3.py (BSC)    Four.meme REST API
+   (buy/sell/         (risk scoring:   (token search,
+    quotes/8004)      holders,creator  rankings, metadata)
+                      history,contracts)
+          │                │
+          └────────┬───────┘
+              BSC (BNB Chain)
+    TokenManager2 │ TokenManagerHelper3 │ AgentIdentifier
+    TaxToken │ ERC20 │ PancakeSwap Router
 ```
 
 ### Tech Stack
 
 | Layer | Technology | Rationale |
 |-------|-----------|-----------|
-| Frontend | React + Vite + Tailwind | Fast build, polished output, dark theme |
-| Backend | Python FastAPI | Best Web3.py + pandas + LLM SDK access |
-| Database | SQLite | Local-first, zero config, sufficient for MVP |
-| On-chain | Web3.py | Four.meme ABIs (TokenManager2, AgentIdentifier, TaxToken) |
-| AI/LLM | Anthropic Claude API | Rationale generation, token description analysis, sentiment |
-| Wallet | wagmi + ethers.js (frontend) | Standard BSC wallet connection |
-| Market Data | Four.meme API + Binance API + CoinGecko | Token feeds, prices, Fear & Greed |
+| Frontend | React + Vite + Tailwind CSS | Fast build, polished output, dark Binance-inspired theme |
+| Backend | Python FastAPI | Best Web3.py + LLM SDK access, async-native |
+| Database | SQLite (aiosqlite) | Local-first, zero config, sufficient for MVP |
+| On-chain reads | Web3.py | Direct contract calls for risk scoring (TokenManagerHelper3, TokenManager2, TaxToken, ERC20) |
+| Trading | Four.meme CLI (`@four-meme/four-meme-ai`) | Buy/sell execution, price quotes, ERC-8004 registration via subprocess |
+| AI/LLM | Google Gemini 2.0 Flash (free tier, `google-genai` SDK) | Rationale generation, token description analysis, sentiment |
+| Wallet | wagmi + viem (frontend) | Standard BSC wallet connection |
+| Market Data | Four.meme API + CoinGecko + Alternative.me | Token feeds, BNB price, Fear & Greed index |
 | Deploy | Vercel (frontend) + Railway (backend) | Free tier sufficient for demo |
 
 ### Four.meme Integration Points
 
+**Hybrid integration:** CLI for trading actions, Web3.py for on-chain reads, REST API for token discovery.
+
 | Integration | Method | Purpose |
 |-------------|--------|---------|
-| New token feed | Four.meme public API | Discover launches in real time |
-| Token metadata | Four.meme API (`/meme-api/v1/public/token/*`) | Name, symbol, description, creator, image |
-| Bonding curve state | `TokenManager2` ABI (on-chain read) | Progress, raised amount, graduation status |
-| Token creation args | Four.meme API (`/meme-api/v1/private/token/create`) | For future creator-facing features |
-| Buy/sell execution | `TokenManager2` or PancakeSwap router | Trade on bonding curve or DEX |
-| Agent identity | `AgentIdentifier` ABI (on-chain write) | Register as ERC-8004 agent wallet |
-| Tax token inspection | `TaxToken` ABI (on-chain read) | Check fee parameters for risk scoring |
-| Image/metadata | Four.meme CDN URLs | Display token logos in dashboard |
+| New token feed | Four.meme REST API (`POST /public/token/search`) | Discover launches in real time (30s polling) |
+| Token metadata | Four.meme REST API (`GET /private/token/get/v2`) | Name, symbol, description, creator, image |
+| Token rankings | Four.meme REST API (`POST /public/token/ranking`) | Trending/hot tokens |
+| Bonding curve state | Web3.py (`TokenManagerHelper3.getTokenInfo()`) | Progress, funds, max funds, graduation status |
+| Holder concentration | Web3.py (ERC20 Transfer events + `balanceOf`) | Top holder %, distribution analysis |
+| Creator history | Web3.py (`TokenManager2` TokenCreate events) | Prior launches by creator wallet |
+| Tax token inspection | Web3.py (`TaxToken` ABI: `feeRate`, allocation rates) | Check fee parameters for risk scoring |
+| Buy/sell execution | Four.meme CLI (`fourmeme buy`, `fourmeme sell`) | Trade on bonding curve via subprocess |
+| Price quotes | Four.meme CLI (`fourmeme quote-buy`, `fourmeme quote-sell`) | Pre-trade price estimates |
+| Agent identity | Four.meme CLI (`fourmeme 8004-register`) + Web3.py (`AgentIdentifier.isAgent`) | Register and verify ERC-8004 agent wallet |
+| Block events | Four.meme CLI (`fourmeme events`) | TokenPurchase, TokenSale, LiquidityAdded events |
 
 ### AI Orchestration
 
@@ -383,26 +402,28 @@ Use AI where it adds judgment. Use deterministic logic where it doesn't.
 
 | Task | Method |
 |------|--------|
-| Risk signal computation | Deterministic (Web3 reads + math) |
-| Score aggregation | Rules engine (weighted scoring) |
-| Rationale generation | LLM (Claude API) |
+| Risk signal computation | Deterministic (Web3.py reads + math) |
+| Score aggregation | Rules engine (weighted scoring, 8 signals) |
+| Rationale generation | LLM (Google Gemini 2.0 Flash) |
 | Token description analysis | LLM (classify as legit/scam/hype) |
-| Social sentiment | VADER (lightweight) + LLM (if available) |
+| Social sentiment | VADER (lightweight, no API key needed) |
 | Persona action decision | Rules engine (persona config → action) |
-| Transaction building | Deterministic (Web3.py) |
+| Transaction building | Four.meme CLI (subprocess) |
 | Override tracking | Deterministic (log + compare) |
+| Market context | CoinGecko (BNB price) + Alternative.me (Fear & Greed) |
 
 **Agent orchestration pattern:**
 
 ```
-1. Fetch new token data (Four.meme API + on-chain)
-2. Compute risk signals (deterministic)
-3. Aggregate into score (rules engine)
-4. Ask LLM to explain the score and recommend (Claude API)
-5. Apply persona rules to filter action
-6. If action = buy/sell: build transaction
-7. Push to frontend for approval
-8. On approval: execute and track
+1. Scanner polls Four.meme REST API for new tokens (30s interval)
+2. New tokens stored in SQLite, broadcast via WebSocket
+3. Unscored tokens queued for risk engine (10 per cycle)
+4. Risk engine computes all 8 signals (Web3.py + API + VADER)
+5. Weighted aggregation → GREEN/AMBER/RED grade
+6. LLM generates plain-language rationale (Gemini, async)
+7. Persona engine applies rules → buy/skip/monitor action
+8. If buy: prepare TX via CLI quote, push to approval gate
+9. User approves → CLI executes trade → position tracked
 ```
 
 ---
@@ -503,12 +524,59 @@ CREATE TABLE watchlist (
     created_at TEXT
 );
 
+-- Activity feed
+CREATE TABLE activity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT,            -- new_token / risk_scored / trade_executed / override / etc.
+    token_address TEXT,
+    detail TEXT,                -- JSON payload
+    created_at TEXT
+);
+
+-- Token snapshots (for velocity tracking)
+CREATE TABLE token_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_address TEXT,
+    funds_wei TEXT,
+    offers TEXT,
+    holder_count INTEGER,
+    snapshot_at TEXT
+);
+
+-- User overrides (behavioral nudge)
+CREATE TABLE overrides (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_address TEXT,
+    override_type TEXT,         -- approved_red / rejected_green
+    risk_score TEXT,
+    outcome_checked INTEGER DEFAULT 0,
+    outcome_detail TEXT,
+    created_at TEXT
+);
+
+-- Pending actions (approval queue)
+CREATE TABLE pending_actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_address TEXT,
+    action TEXT,                -- buy / sell
+    amount_bnb REAL,
+    slippage REAL,
+    persona TEXT,
+    risk_score TEXT,
+    rationale TEXT,
+    status TEXT DEFAULT 'pending',  -- pending / approved / rejected / expired
+    created_at TEXT,
+    resolved_at TEXT
+);
+
 -- Indexes
 CREATE INDEX idx_tokens_creator ON tokens (creator_address);
 CREATE INDEX idx_tokens_risk ON tokens (risk_score);
 CREATE INDEX idx_scans_token ON scans (token_address);
 CREATE INDEX idx_positions_status ON positions (status);
 CREATE INDEX idx_avoided_flagged ON avoided (flagged_at);
+CREATE INDEX idx_activity_type ON activity (event_type);
+CREATE INDEX idx_activity_token ON activity (token_address);
 ```
 
 ---
@@ -532,55 +600,63 @@ CREATE INDEX idx_avoided_flagged ON avoided (flagged_at);
 
 ## 11. Build Order
 
-### Phase 1 — Foundation (Days 1–6)
+### Phase 1 — Foundation (COMPLETE)
 
 **Goal:** Working dashboard that shows live Four.meme launches with risk scores.
 
-- [ ] Project scaffolding: FastAPI backend + React/Vite frontend + SQLite
-- [ ] BSC Web3 provider setup (Web3.py, BNB testnet + mainnet)
-- [ ] Four.meme API client (token list, token detail, bonding curve reads)
-- [ ] Wallet connection UI (wagmi + ethers.js)
-- [ ] Persona selection page (3 presets with visual cards)
-- [ ] Budget cap configuration UI
-- [ ] Basic token feed: fetch new launches, display on dashboard
-- [ ] Risk scoring engine v1: creator history + holder concentration + liquidity check
-- [ ] Token card component with green/amber/red badge
+- [x] Project scaffolding: FastAPI backend + React/Vite frontend + SQLite (aiosqlite)
+- [x] BSC Web3 provider setup (Web3.py with POA middleware, V1+V2 token struct decode)
+- [x] Four.meme REST API client (httpx): search, get, rankings
+- [x] Four.meme CLI wrapper (async subprocess): buy/sell/quotes/events/8004
+- [x] Market context client: CoinGecko BNB price + Alternative.me Fear & Greed
+- [x] Scanner service (30s polling): discovers tokens, queues for scoring, broadcasts via WebSocket
+- [x] Risk scoring engine: all 8 signals implemented with weighted aggregation
+- [x] LLM service: Google Gemini provider with fallback rationale
+- [x] Persona engine: 3 personas with decide_action() rules
+- [x] Trade executor: buy/sell via CLI, position/trade recording
+- [x] Approval gate: 4 modes
+- [x] Backend routes: tokens, config, activity, positions, actions, avoided, watchlist
+- [x] Wallet connection UI (wagmi + viem, BSC chain)
+- [x] Frontend: Dashboard (live feed + stats), Settings (persona + budget), OpportunityDetail (8-signal breakdown), Positions, Avoided (stats + cards), Activity feed
+- [x] Components: Navbar, TokenCard, RiskBadge, PersonaSelector, BudgetBar
+- [x] WebSocket: auto-reconnecting, live push for new tokens and risk scores
+- [x] Dark Binance-inspired theme (CSS variables, Tailwind)
 
-**End of Phase 1 deliverable:** You can open the app, connect wallet, pick a persona, and see a live feed of scored Four.meme tokens.
+**Status:** All pages functional. Scanner discovering and scoring real Four.meme tokens. 8-signal risk engine producing GREEN/AMBER/RED grades with detailed per-signal breakdowns.
 
-### Phase 2 — The Brain (Days 7–12)
+### Phase 2 — The Brain (IN PROGRESS)
 
-**Goal:** Agent proposes trades and executes with approval.
+**Goal:** End-to-end trade loop with LLM rationale and position tracking.
 
-- [ ] Complete risk scoring engine: all 8 signals
-- [ ] LLM integration (Claude API) for rationale generation
-- [ ] Opportunity detail page (full risk breakdown + rationale + action)
-- [ ] Persona action engine (rules that map score + persona → action)
-- [ ] Transaction builder (buy on bonding curve, sell on PancakeSwap)
-- [ ] Approval gate system (4 modes)
-- [ ] Transaction preview modal (amount, slippage, gas, approve/reject)
-- [ ] Trade execution with wallet signature
-- [ ] Activity feed page
-- [ ] Position tracking (entry price, current price, PnL)
-- [ ] WebSocket for live updates (new opportunities pushed to frontend)
+- [x] Complete risk scoring engine: all 8 signals (done in Phase 1)
+- [x] LLM integration (Gemini) for rationale generation (service built, needs API key)
+- [x] Opportunity detail page (full risk breakdown + rationale + action)
+- [x] Persona action engine (rules that map score + persona → action)
+- [x] Approval gate system (4 modes)
+- [x] Trade executor (buy/sell via CLI)
+- [x] Activity feed page
+- [x] WebSocket for live updates
+- [ ] Transaction builder integration: quote via CLI → slippage calc → TxPreview display
+- [ ] Approval modal: TX preview with amount, slippage, gas, approve/reject buttons
+- [ ] Position tracker background job: update prices, compute PnL, propose exits
+- [ ] End-to-end test: scanner → score → persona recommends → approve → execute → track
 
 **End of Phase 2 deliverable:** Full trade loop works — agent finds token, scores it, explains it, proposes trade, user approves, trade executes, position tracked.
 
-### Phase 3 — Polish & Demo Features (Days 13–17)
+### Phase 3 — Polish & Demo Features
 
 **Goal:** Demo-ready with killer features and visual polish.
 
-- [ ] "What I Avoided" log: background job checks red-flagged tokens at 1h/6h/24h
-- [ ] Avoided page UI with savings tally
-- [ ] Behavioral nudge: track overrides, show outcome summary
-- [ ] Agent wallet ERC-8004 registration (AgentIdentifier contract)
+- [ ] "What I Avoided" background job: check red-flagged token prices at 1h/6h/24h
+- [ ] Behavioral nudge: track overrides, show outcome summary on Dashboard
+- [ ] Agent wallet ERC-8004 registration UI on Settings page
 - [ ] Post-trade monitoring: price alerts, momentum loss detection
-- [ ] Watchlist page (add tokens, creators, patterns)
-- [ ] Dashboard visual polish: dark theme, animations, responsive layout
-- [ ] Settings page with all configurable options
-- [ ] Demo video recording (3-5 minutes, see demo script below)
+- [ ] Watchlist management UI on Settings page
+- [ ] Visual polish: animations, hover effects, pulsing status indicator, responsive layout
+- [ ] Deployment: Backend Dockerfile (Python + Node.js) → Railway, Frontend → Vercel
+- [ ] Demo seed script for pre-populated avoided rugs
 - [ ] README with architecture diagram, setup instructions, screenshots
-- [ ] GitHub cleanup: .env.example, license, contributing guide
+- [ ] Demo video recording (3-5 min, see demo script below)
 
 ---
 
@@ -642,79 +718,71 @@ A judge evaluating this will see:
 ## 15. File Structure
 
 ```
-memeguard/
+meme-guard/
 ├── backend/
-│   ├── main.py                    # FastAPI app entry
-│   ├── config.py                  # Settings, env vars
-│   ├── database.py                # SQLite init, schema, queries
+│   ├── main.py                    # FastAPI app + WebSocket + lifespan (init DB, start scanner)
+│   ├── config.py                  # Pydantic Settings from .env + Contracts + BudgetDefaults
+│   ├── database.py                # aiosqlite: 11 tables, init_db(), get/set_config helpers
+│   ├── requirements.txt           # Pinned deps (fastapi, web3, google-genai, httpx>=0.28.1, etc.)
 │   ├── services/
-│   │   ├── scanner.py             # Four.meme API polling + new launch detection
-│   │   ├── risk_engine.py         # 8-signal scoring engine
-│   │   ├── persona_engine.py      # Persona rules → action mapping
-│   │   ├── llm_service.py         # Claude API for rationale generation
-│   │   ├── tx_builder.py          # Transaction preparation + preview
-│   │   ├── executor.py            # Trade execution (receives signed tx)
-│   │   ├── position_tracker.py    # Track open positions, compute PnL
-│   │   ├── avoided_tracker.py     # "What I Avoided" background checker
-│   │   ├── market_context.py      # Fear & Greed, BNB price, market overview
-│   │   └── agent_identity.py      # ERC-8004 registration
+│   │   ├── scanner.py             # Token discovery: polls Four.meme API, stores tokens, queues scoring
+│   │   ├── risk_engine.py         # All 8 deterministic signals, weighted aggregation → GREEN/AMBER/RED
+│   │   ├── persona_engine.py      # 3 persona configs → decide_action() → buy/skip/monitor/exit
+│   │   ├── llm_service.py         # Google Gemini provider (google-genai SDK), fallback rationale
+│   │   ├── tx_builder.py          # prepare_buy/sell via CLI quote → TxPreview
+│   │   ├── executor.py            # execute_approved_action() via Four.meme CLI, record trades/positions
+│   │   ├── approval_gate.py       # 4 approval modes: approve_each, per_session, budget_threshold, monitor
+│   │   ├── position_tracker.py    # PnL tracking, exit recommendations
+│   │   ├── avoided_tracker.py     # "What I Avoided" background checker (1h/6h/24h price checks)
+│   │   └── agent_identity.py      # ERC-8004 registration via CLI + verification via Web3.py
 │   ├── clients/
-│   │   ├── fourmeme_api.py        # Four.meme REST client
-│   │   ├── bsc_web3.py            # Web3.py provider + contract interactions
-│   │   └── binance_api.py         # Price data, market metrics
-│   ├── models/
-│   │   ├── token.py               # Token dataclass
-│   │   ├── scan.py                # Scan event dataclass
-│   │   ├── position.py            # Position dataclass
-│   │   └── trade.py               # Trade dataclass
-│   ├── abis/
-│   │   ├── TokenManager2.json
-│   │   ├── AgentIdentifier.json
-│   │   ├── TaxToken.json
-│   │   └── PancakeRouter.json
-│   ├── routes/
-│   │   ├── tokens.py              # GET /api/tokens, GET /api/tokens/:address
-│   │   ├── actions.py             # POST /api/approve, POST /api/reject
-│   │   ├── positions.py           # GET /api/positions
-│   │   ├── avoided.py             # GET /api/avoided
-│   │   ├── config.py              # GET/PUT /api/config
-│   │   ├── watchlist.py           # CRUD /api/watchlist
-│   │   └── activity.py            # GET /api/activity
-│   └── requirements.txt
+│   │   ├── fourmeme_cli.py        # Async subprocess wrapper for @four-meme/four-meme-ai CLI
+│   │   ├── fourmeme_api.py        # Four.meme REST API (httpx): search, get, rankings, config
+│   │   ├── bsc_web3.py            # Web3.py: getTokenInfo (V1+V2 raw decode), holders, creator history, tax
+│   │   └── market_api.py          # CoinGecko BNB price + Alternative.me Fear & Greed
+│   ├── abis/                      # Lite contract ABIs (only needed functions/events)
+│   │   ├── TokenManager2.json     # Events: TokenCreate, TokenPurchase, TokenSale, LiquidityAdded
+│   │   ├── TokenManagerHelper3.json # getTokenInfo, tryBuy, trySell
+│   │   ├── AgentIdentifier.json   # isAgent, nftCount, nftAt
+│   │   ├── TaxToken.json          # feeRate, rateFounder, rateHolder, rateBurn, rateLiquidity
+│   │   └── ERC20.json             # Transfer event, balanceOf, totalSupply
+│   └── routes/
+│       ├── tokens.py              # GET /api/tokens, GET /api/tokens/{address}
+│       ├── actions.py             # GET /api/actions/pending, POST approve/reject
+│       ├── positions.py           # GET /api/positions
+│       ├── avoided.py             # GET /api/avoided, GET /api/avoided/stats
+│       ├── config_routes.py       # GET/PUT /api/config, PUT /api/config/bulk
+│       ├── watchlist.py           # GET/POST/DELETE /api/watchlist
+│       └── activity.py            # GET /api/activity
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx
+│   │   ├── App.jsx                # BrowserRouter (6 routes) + WagmiProvider + QueryClientProvider
+│   │   ├── index.css              # @import "tailwindcss" + Binance dark theme CSS variables
 │   │   ├── pages/
-│   │   │   ├── Dashboard.jsx
-│   │   │   ├── OpportunityDetail.jsx
-│   │   │   ├── Positions.jsx
-│   │   │   ├── Avoided.jsx
-│   │   │   ├── Activity.jsx
-│   │   │   └── Settings.jsx
+│   │   │   ├── Dashboard.jsx      # Live token feed + persona badge + budget bar + stats
+│   │   │   ├── OpportunityDetail.jsx  # Full 8-signal risk breakdown + rationale + approve/reject
+│   │   │   ├── Positions.jsx      # Active/closed positions table with PnL
+│   │   │   ├── Avoided.jsx        # Stats banner + avoided token cards + savings tally
+│   │   │   ├── Activity.jsx       # Chronological event feed
+│   │   │   └── Settings.jsx       # Persona selector + approval mode + budget caps
 │   │   ├── components/
-│   │   │   ├── TokenCard.jsx
-│   │   │   ├── RiskBadge.jsx
-│   │   │   ├── ApprovalModal.jsx
-│   │   │   ├── PersonaSelector.jsx
-│   │   │   ├── BudgetBar.jsx
-│   │   │   ├── PositionRow.jsx
-│   │   │   ├── AvoidedCard.jsx
-│   │   │   └── Navbar.jsx
+│   │   │   ├── Navbar.jsx         # Navigation + wallet connect button
+│   │   │   ├── TokenCard.jsx      # Token info + risk badge + bonding curve progress bar
+│   │   │   ├── RiskBadge.jsx      # Green/amber/red pill badge
+│   │   │   ├── PersonaSelector.jsx # 3 persona cards with descriptions
+│   │   │   └── BudgetBar.jsx      # Daily budget progress indicator
 │   │   ├── hooks/
-│   │   │   ├── useWallet.js
-│   │   │   ├── useTokenFeed.js
-│   │   │   └── useWebSocket.js
-│   │   ├── services/
-│   │   │   └── api.js             # Backend API client
-│   │   └── styles/
-│   │       └── index.css          # Tailwind + custom theme
+│   │   │   ├── useWallet.js       # wagmi config for BSC (chain ID 56), injected connector
+│   │   │   └── useWebSocket.js    # Auto-reconnecting WebSocket, message buffer, getByType()
+│   │   └── services/
+│   │       └── api.js             # Fetch wrapper for all backend endpoints
 │   ├── package.json
-│   ├── vite.config.js
-│   └── tailwind.config.js
+│   └── vite.config.js             # React + Tailwind plugins, /api and /ws proxy to backend
+├── fourmeme-cli/                  # Local npm install of @four-meme/four-meme-ai (gitignored)
+├── Memeguard.md                   # This file — full MVP specification
+├── CLAUDE.md                      # Project reference for development
 ├── .env.example
-├── .gitignore
-├── README.md
-└── LICENSE
+└── .gitignore
 ```
 
 ---
@@ -724,29 +792,22 @@ memeguard/
 ```env
 # BSC
 BSC_RPC_URL=https://bsc-dataseed1.binance.org
-BSC_TESTNET_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
-WALLET_PRIVATE_KEY=           # only for agent hot wallet, never main wallet
 
-# Four.meme
+# Four.meme CLI (agent hot wallet — never use main holdings)
+PRIVATE_KEY=                  # Hex private key for agent wallet
+
+# Four.meme API
 FOURMEME_API_BASE=https://four.meme/meme-api/v1
 
-# AI
-ANTHROPIC_API_KEY=            # Claude API for rationale generation
-
-# Market Data
-BINANCE_API_KEY=              # optional, for enhanced market data
-COINGECKO_API_KEY=            # optional, for Fear & Greed
-
-# Contracts (BSC Mainnet)
-TOKEN_MANAGER2_ADDRESS=
-AGENT_IDENTIFIER_ADDRESS=
-PANCAKE_ROUTER_ADDRESS=0x10ED43C718714eb63d5aA57B78B54704E256024E
+# AI / LLM
+GEMINI_API_KEY=               # Google Gemini API key (free tier)
 
 # App
 DATABASE_PATH=./data/memeguard.db
-LOG_LEVEL=INFO
 SCAN_INTERVAL_SECONDS=30
 ```
+
+Contract addresses are hardcoded in `backend/config.py` (Contracts class) — not environment variables, since they don't change between environments.
 
 ---
 
@@ -754,13 +815,14 @@ SCAN_INTERVAL_SECONDS=30
 
 If Phase 3 gets cut, the minimum viable submission is:
 
-- Dashboard with live Four.meme token feed
-- Risk scoring with green/amber/red badges
-- One persona working (Momentum)
-- Transaction preview + approval + execution
-- Activity feed showing what the agent did
+- Dashboard with live Four.meme token feed (DONE)
+- Risk scoring with green/amber/red badges, all 8 signals (DONE)
+- All three personas working with action decisions (DONE)
+- Activity feed showing what the agent did (DONE)
+- Transaction preview + approval + execution (Phase 2, in progress)
+- Position tracking with PnL (Phase 2, in progress)
 
-That alone is a complete agentic product with on-chain action and Four.meme integration. The "What I Avoided" log and behavioral nudge are high-impact polish, not core requirements.
+That alone is a complete agentic product with on-chain action and Four.meme integration. The "What I Avoided" log is the highest-impact Phase 3 item — prioritize it over visual polish.
 
 ---
 
