@@ -183,6 +183,42 @@ Users can manually add:
 - Specific creator wallets to track
 - Launch patterns to flag (e.g., "alert me on any token with 'AI' in the name")
 
+### J. Interactive AI Advisor
+
+**Targets: Innovation criterion (30% of expert score)**
+
+A conversational chat interface that transforms the LLM from a label-generator into an interactive trading co-pilot.
+
+- Users ask questions about specific tokens: "Why is this risky?", "Should I buy despite amber?", "Compare this to the last 5 tokens"
+- Context-aware: automatically pulls token risk data, position history, persona config, and market context into the prompt
+- Session-scoped conversational memory (last N messages)
+- Available as a chat panel on the Dashboard and OpportunityDetail pages
+- Backend: `POST /api/chat` with `{ message, token_address (optional), conversation_id }`
+
+This is not a general chatbot — it's scoped to trading decisions, risk analysis, and token comparison. The agent has access to all 8 risk signals, the persona's reasoning, and the user's trade history.
+
+### K. Multi-Signal Narrative Synthesis
+
+**Targets: Innovation criterion (30% of expert score)**
+
+Instead of generating one-line explanations per signal, the LLM synthesizes all 8 signals into a correlated narrative that reveals patterns.
+
+Example output:
+> "This creator launched 3 tokens in the last hour, and the top wallet already holds 38% of supply. This combination is a strong pump-and-dump indicator — historically, tokens with both rapid creator cycling AND concentrated holdings rug within 2 hours. The bonding curve is filling at 2.1 BNB/min, suggesting coordinated bot buying rather than organic interest. Despite the Fear & Greed index showing 'Greed', the on-chain signals override market sentiment here."
+
+This replaces the existing per-signal one-liner with a cohesive, actionable narrative. The LLM prompt explicitly instructs correlation detection across signals.
+
+### L. Risk Visualization
+
+**Targets: Presentation criterion (20% of expert score) + Community Voting (30% of total)**
+
+A radar chart or stacked signal bar visualization for the 8-signal breakdown on the OpportunityDetail page.
+
+- Each of the 8 signals plotted on a radar chart (recharts or Chart.js)
+- Color-coded by signal weight (HIGH = red axis, MEDIUM = amber, LOW = green)
+- Instant visual comparison between tokens
+- Screenshot-worthy for community voting
+
 ---
 
 ## 5. Non-Goals (v1)
@@ -404,10 +440,12 @@ Use AI where it adds judgment. Use deterministic logic where it doesn't.
 |------|--------|
 | Risk signal computation | Deterministic (Web3.py reads + math) |
 | Score aggregation | Rules engine (weighted scoring, 8 signals) |
-| Rationale generation | LLM (Google Gemini 2.0 Flash) |
+| Rationale generation | LLM (Google Gemini 2.0 Flash) — multi-signal narrative synthesis |
 | Token description analysis | LLM (classify as legit/scam/hype) |
+| Interactive AI advisor | LLM (Gemini) — context-aware conversational chat about tokens, risks, decisions |
 | Social sentiment | VADER (lightweight, no API key needed) |
 | Persona action decision | Rules engine (persona config → action) |
+| AMBER token deep analysis | LLM escalation pipeline (only for uncertain tokens where AI adds value) |
 | Transaction building | Four.meme CLI (subprocess) |
 | Override tracking | Deterministic (log + compare) |
 | Market context | CoinGecko (BNB price) + Alternative.me (Fear & Greed) |
@@ -626,8 +664,9 @@ CREATE INDEX idx_activity_token ON activity (token_address);
 
 ### Phase 2 — The Brain (IN PROGRESS)
 
-**Goal:** End-to-end trade loop with LLM rationale and position tracking.
+**Goal:** End-to-end trade loop with AI depth and position tracking.
 
+#### Core Pipeline
 - [x] Complete risk scoring engine: all 8 signals (done in Phase 1)
 - [x] LLM integration (Gemini) for rationale generation (service built, needs API key)
 - [x] Opportunity detail page (full risk breakdown + rationale + action)
@@ -639,21 +678,41 @@ CREATE INDEX idx_activity_token ON activity (token_address);
 - [ ] Transaction builder integration: quote via CLI → slippage calc → TxPreview display
 - [ ] Approval modal: TX preview with amount, slippage, gas, approve/reject buttons
 - [ ] Position tracker background job: update prices, compute PnL, propose exits
+- [ ] Auto-propose actions: scanner → score → persona decides → auto-create pending_action + broadcast via WebSocket
 - [ ] End-to-end test: scanner → score → persona recommends → approve → execute → track
 
-**End of Phase 2 deliverable:** Full trade loop works — agent finds token, scores it, explains it, proposes trade, user approves, trade executes, position tracked.
+#### AI Depth (Competitive Edge)
+- [ ] Interactive AI chat advisor: `POST /api/chat` endpoint + frontend chat panel on Dashboard/OpportunityDetail
+- [ ] Multi-signal narrative synthesis: enhanced LLM prompt correlating all 8 signals into a pattern-detecting narrative
+- [ ] Escalation pipeline: quick deterministic scan for GREEN/RED, deep AI analysis reserved for AMBER tokens
+
+#### Expanded WebSocket Events
+- [ ] `action_proposed` — trade opportunity pending approval
+- [ ] `trade_executed` — buy/sell completed
+- [ ] `position_update` — PnL change (periodic)
+- [ ] `risk_alert` — token grade change or rug detection
+- [ ] `avoided_update` — "dodged a bullet" notification
+
+**End of Phase 2 deliverable:** Full trade loop works with AI advisor. Agent finds token, scores it, synthesizes a narrative, proposes trade, user can ask questions via chat, approves, trade executes, position tracked. Dashboard feels alive with real-time WebSocket events.
 
 ### Phase 3 — Polish & Demo Features
 
-**Goal:** Demo-ready with killer features and visual polish.
+**Goal:** Demo-ready with killer differentiators and visual polish. Ordered by judging impact.
 
-- [ ] "What I Avoided" background job: check red-flagged token prices at 1h/6h/24h
+#### High Priority (Differentiators)
+- [ ] ERC-8004 agent identity registration: `agent_identity.py` service + Settings UI button + on-chain tx verification (low effort, high Four.meme integration signal)
+- [ ] "What I Avoided" background job: check red-flagged token prices at 1h/6h/24h, confirmed rug detection, savings tally
+- [ ] Risk visualization: radar chart or stacked signal bars for 8-signal breakdown (recharts/Chart.js)
+- [ ] Deployment: Frontend → Vercel, Backend Dockerfile (Python + Node.js) → Railway
+
+#### Medium Priority (Completeness)
+- [ ] Post-trade monitoring: price alerts, momentum loss detection, exit signals
 - [ ] Behavioral nudge: track overrides, show outcome summary on Dashboard
-- [ ] Agent wallet ERC-8004 registration UI on Settings page
-- [ ] Post-trade monitoring: price alerts, momentum loss detection
 - [ ] Watchlist management UI on Settings page
+- [ ] Volume consistency signal: replace stub with real implementation
+
+#### Demo & Submission
 - [ ] Visual polish: animations, hover effects, pulsing status indicator, responsive layout
-- [ ] Deployment: Backend Dockerfile (Python + Node.js) → Railway, Frontend → Vercel
 - [ ] Demo seed script for pre-populated avoided rugs
 - [ ] README with architecture diagram, setup instructions, screenshots
 - [ ] Demo video recording (3-5 min, see demo script below)
@@ -670,8 +729,8 @@ Open the app. Connect wallet. Register as ERC-8004 agent (show the on-chain tx �
 **Scene 2 — Scanning (45s)**
 Dashboard lights up with live Four.meme launches. Each token card shows name, launch age, bonding curve progress, and a green/amber/red risk badge. Point out a red-scored token: "This creator launched 3 tokens yesterday — all rugged within 2 hours. Agent automatically flags this."
 
-**Scene 3 — Opportunity (60s)**
-Agent highlights a green-scored token. Click into the detail page. Show the full risk breakdown: creator first launch (good sign), healthy holder distribution, strong early volume, no tax token flags. Read the AI-generated rationale: "First-time creator with organic social activity. Volume is consistent, not wash-traded. Momentum persona recommends entry at 0.05 BNB." Click "Approve."
+**Scene 3 — Opportunity + AI Advisor (75s)**
+Agent highlights a green-scored token. Click into the detail page. Show the risk radar chart and full 8-signal breakdown. Read the multi-signal narrative: "First-time creator with organic social activity. Volume is consistent, not wash-traded. No cross-signal red flags detected." Open the AI advisor chat and ask: "Why does the Momentum persona want to buy this?" — advisor explains the specific signals that triggered the buy recommendation. Click "Approve."
 
 **Scene 4 — Execution (30s)**
 Transaction preview shows exact swap details. Sign with wallet. TX confirms on BSC. Position appears in the portfolio view with entry price and live PnL.
@@ -686,7 +745,19 @@ Back to dashboard. Show the behavioral summary: "1 trade executed. 3 rugs avoide
 
 ## 13. What Makes This Hackathon-Worthy
 
-A judge evaluating this will see:
+### Judging Criteria Alignment
+
+Projects are evaluated through **expert review (70%)** and **community voting (30%)**.
+
+| Judging Criterion | Weight | How MemeGuard Delivers |
+|-------------------|--------|----------------------|
+| **Innovation** (originality + depth of AI) | 30% of expert | Interactive AI advisor (conversational, not just labels). Multi-signal narrative synthesis (pattern detection across 8 signals). Escalation pipeline (deterministic core + deep AI for uncertain cases). ERC-8004 on-chain agent identity. |
+| **Technical Implementation** (code quality + demo stability) | 30% of expert | Complete end-to-end pipeline: discover → score → propose → approve → execute → track. 8-signal deterministic risk engine. 4 approval modes. Budget-capped autonomy. Hybrid integration (CLI + Web3.py + REST API). |
+| **Practical Value** (user impact + commercial potential) | 20% of expert | "What I Avoided" — concrete savings visualization. Position lifecycle management. Budget enforcement. Persona presets for different risk profiles. Solves real information asymmetry on Four.meme. |
+| **Presentation** (pitch clarity + execution capability) | 20% of expert | Risk radar chart visualization. Real-time WebSocket dashboard. Dark Binance-inspired theme. Demo video with scripted narrative arc. |
+| **Community Voting** | 30% of total | Deployed on Vercel for public access. Visual polish + animations. Screenshot-worthy "What I Avoided" section. Live trading demo. |
+
+### Core Value Proposition
 
 | Criterion | How MemeGuard Delivers |
 |-----------|----------------------|
@@ -695,11 +766,12 @@ A judge evaluating this will see:
 | Agentic behavior | Holds wallet, reads market, makes decisions, executes transactions, learns from outcomes. |
 | On-chain action | Reads Four.meme contracts, executes swaps on BSC, registers as ERC-8004 agent. |
 | Four.meme fit | Built specifically for Four.meme's API, bonding curve, Agentic Mode, and agent identity system. |
+| AI depth | Interactive advisor, multi-signal narrative synthesis, escalation pipeline for uncertain tokens. |
 | Configurable persona | Three presets with predefined strategies — directly matches AMA guidance. |
 | Human oversight | Four approval modes + hard budget caps. User controls the leash. |
 | Market awareness | Fear & Greed index, BNB trend, per-token sentiment and on-chain signals. |
 | Immediately usable | Open app → connect wallet → pick persona → agent starts working. 2-minute setup. |
-| Visual quality | Dark Binance-inspired dashboard, real-time feed, approval modals, portfolio view. |
+| Visual quality | Dark Binance-inspired dashboard, real-time feed, risk radar chart, approval modals, portfolio view. |
 
 ---
 
@@ -729,6 +801,7 @@ meme-guard/
 │   │   ├── risk_engine.py         # All 8 deterministic signals, weighted aggregation → GREEN/AMBER/RED
 │   │   ├── persona_engine.py      # 3 persona configs → decide_action() → buy/skip/monitor/exit
 │   │   ├── llm_service.py         # Google Gemini provider (google-genai SDK), fallback rationale
+│   │   ├── chat_service.py        # Interactive AI advisor: context-aware conversational chat
 │   │   ├── tx_builder.py          # prepare_buy/sell via CLI quote → TxPreview
 │   │   ├── executor.py            # execute_approved_action() via Four.meme CLI, record trades/positions
 │   │   ├── approval_gate.py       # 4 approval modes: approve_each, per_session, budget_threshold, monitor
@@ -753,7 +826,8 @@ meme-guard/
 │       ├── avoided.py             # GET /api/avoided, GET /api/avoided/stats
 │       ├── config_routes.py       # GET/PUT /api/config, PUT /api/config/bulk
 │       ├── watchlist.py           # GET/POST/DELETE /api/watchlist
-│       └── activity.py            # GET /api/activity
+│       ├── activity.py            # GET /api/activity
+│       └── chat.py                # POST /api/chat (interactive AI advisor)
 ├── frontend/
 │   ├── src/
 │   │   ├── App.jsx                # BrowserRouter (6 routes) + WagmiProvider + QueryClientProvider
@@ -821,8 +895,10 @@ If Phase 3 gets cut, the minimum viable submission is:
 - Activity feed showing what the agent did (DONE)
 - Transaction preview + approval + execution (Phase 2, in progress)
 - Position tracking with PnL (Phase 2, in progress)
+- **Interactive AI advisor chat** (Phase 2 — highest Innovation differentiator)
+- **ERC-8004 agent registration** (Phase 3 — low effort, high Four.meme signal)
 
-That alone is a complete agentic product with on-chain action and Four.meme integration. The "What I Avoided" log is the highest-impact Phase 3 item — prioritize it over visual polish.
+That alone is a complete agentic product with AI depth, on-chain action, and deep Four.meme integration. The "What I Avoided" log is the highest-impact Phase 3 item — prioritize it over visual polish. The AI advisor and ERC-8004 are the two features most likely to differentiate from other submissions.
 
 ---
 

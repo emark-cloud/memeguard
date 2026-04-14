@@ -2,9 +2,17 @@
 
 ## Project Overview
 
-MemeGuard is a persona-based AI trading agent for the **Four.meme** memecoin launchpad on **BNB Chain (BSC)**. It scans new token launches, scores risk, explains findings in plain language, and executes trades within user-approved limits.
+MemeGuard is a persona-based AI trading agent for the **Four.meme** memecoin launchpad on **BNB Chain (BSC)**. It scans new token launches, scores risk, explains findings in plain language, provides an interactive AI advisor for trading decisions, and executes trades within user-approved limits.
 
 Built for the **Four.Meme AI Sprint** hackathon on DoraHacks ($50K prize pool).
+
+## Hackathon Judging Criteria
+
+Expert review (70%) + Community voting (30%):
+- **Innovation** (30% of expert) — originality and depth of AI application
+- **Technical Implementation** (30% of expert) — code quality and demo stability
+- **Practical Value** (20% of expert) — user impact or commercial potential
+- **Presentation** (20% of expert) — clarity of pitch and execution capability
 
 ## Tech Stack
 
@@ -26,14 +34,15 @@ Frontend (React/Vite) <--REST+WebSocket--> Backend (FastAPI)
                     ┌─────────────────────────┼─────────────────────────┐
                     |                         |                         |
               Four.meme CLI            Web3.py (BSC)            Google Gemini
-           (buy/sell/quotes/          (risk scoring:            (rationale
-            events/8004)              holders, creator          generation)
-                                      history, contracts)
+           (buy/sell/quotes/          (risk scoring:            (rationale generation,
+            events/8004)              holders, creator           AI advisor chat,
+                                      history, contracts)        narrative synthesis)
 ```
 
 **Hybrid integration approach:**
 - **Four.meme CLI** for: trading (buy/sell), price quotes, token rankings, ERC-8004 registration, event monitoring
 - **Direct Web3.py** for: holder concentration, creator wallet history, bonding curve reads, tax token inspection, liquidity depth — data the CLI doesn't expose
+- **Google Gemini** for: rationale generation, interactive AI advisor chat, multi-signal narrative synthesis, AMBER token deep analysis
 
 ## Key Contract Addresses (BSC Mainnet)
 
@@ -132,6 +141,7 @@ meme-guard/
 │   │   ├── risk_engine.py   # 8-signal deterministic scoring
 │   │   ├── persona_engine.py # Persona rules -> action mapping
 │   │   ├── llm_service.py   # Gemini rationale generation (provider abstraction)
+│   │   ├── chat_service.py  # Interactive AI advisor (context-aware conversational chat)
 │   │   ├── tx_builder.py    # Transaction preview preparation
 │   │   ├── executor.py      # Trade execution via CLI
 │   │   ├── approval_gate.py # 4 approval modes
@@ -139,7 +149,7 @@ meme-guard/
 │   │   ├── avoided_tracker.py   # "What I Avoided" background checker
 │   │   └── agent_identity.py    # ERC-8004 registration
 │   ├── models/              # Pydantic models / dataclasses
-│   ├── routes/              # FastAPI route modules
+│   ├── routes/              # FastAPI route modules (tokens, actions, positions, avoided, config, watchlist, activity, chat)
 │   ├── abis/                # Contract ABIs (JSON)
 │   └── requirements.txt
 ├── frontend/
@@ -204,7 +214,9 @@ cd fourmeme-cli && npm install @four-meme/four-meme-ai
 ## Key Design Principles
 
 1. **Deterministic risk scoring** — AI only explains, never decides. Rules engine + weighted signals.
-2. **Human in the loop** — All trades require approval (4 modes with varying autonomy).
-3. **Budget caps are hard limits** — Server-side enforcement, never bypassed.
-4. **Local-first** — SQLite, no external DB dependency.
-5. **Provider-agnostic LLM** — Abstraction layer supports Gemini now, Anthropic later.
+2. **AI depth over breadth** — Use the LLM for interactive advising (chat), multi-signal narrative synthesis, and escalation analysis on AMBER tokens — not just labeling. The AI should feel like a knowledgeable trading co-pilot, not a badge generator.
+3. **Human in the loop** — All trades require approval (4 modes with varying autonomy).
+4. **Budget caps are hard limits** — Server-side enforcement, never bypassed.
+5. **Local-first** — SQLite, no external DB dependency.
+6. **Provider-agnostic LLM** — Abstraction layer supports Gemini now, Anthropic later.
+7. **Complete pipelines** — Every user flow must work end-to-end (discover → score → propose → approve → execute → track). No dead ends.
