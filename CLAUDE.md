@@ -42,7 +42,7 @@ Frontend (React/Vite) <--REST+WebSocket--> Backend (FastAPI)
 **Hybrid integration approach:**
 - **Four.meme CLI** for: trading (buy/sell), price quotes, token rankings, ERC-8004 registration, event monitoring
 - **Direct Web3.py** for: holder concentration, creator wallet history, bonding curve reads, tax token inspection, liquidity depth — data the CLI doesn't expose
-- **Google Gemini** for: rationale generation, interactive AI advisor chat, multi-signal narrative synthesis, AMBER token deep analysis
+- **Google Gemini** for: rationale generation, interactive AI advisor chat, multi-signal narrative synthesis, AMBER token deep analysis, AI-driven position exit analysis
 
 ## Key Contract Addresses (BSC Mainnet)
 
@@ -122,6 +122,9 @@ Grades: GREEN (>=65%), AMBER (40-65%), RED (<40%)
 | Min liquidity | $500 |
 | Max slippage | 5% |
 | Cooldown | 60 seconds |
+| Take profit | 100% |
+| Stop loss | -50% |
+| Auto-sell | Disabled |
 
 ## Project Structure
 
@@ -145,7 +148,7 @@ meme-guard/
 │   │   ├── tx_builder.py    # Transaction preview preparation
 │   │   ├── executor.py      # Trade execution via CLI
 │   │   ├── approval_gate.py # 4 approval modes
-│   │   ├── position_tracker.py  # PnL tracking
+│   │   ├── position_tracker.py  # PnL tracking + AI exit analysis + auto-sell
 │   │   ├── avoided_tracker.py   # "What I Avoided" background checker
 │   │   └── agent_identity.py    # ERC-8004 registration
 │   ├── models/              # Pydantic models / dataclasses
@@ -156,7 +159,7 @@ meme-guard/
 │   ├── src/
 │   │   ├── App.jsx
 │   │   ├── pages/           # Dashboard, OpportunityDetail, Positions, Avoided, Activity, Settings
-│   │   ├── components/      # TokenCard, RiskBadge, ApprovalModal, PersonaSelector, etc.
+│   │   ├── components/      # TokenCard, RiskBadge, ChatPanel, ToastNotifications, PersonaSelector, etc.
 │   │   ├── hooks/           # useWallet, useWebSocket, useTokenFeed
 │   │   └── services/api.js  # Backend API client
 │   ├── package.json
@@ -219,4 +222,5 @@ cd fourmeme-cli && npm install @four-meme/four-meme-ai
 4. **Budget caps are hard limits** — Server-side enforcement, never bypassed.
 5. **Local-first** — SQLite, no external DB dependency.
 6. **Provider-agnostic LLM** — Abstraction layer supports Gemini now, Anthropic later.
-7. **Complete pipelines** — Every user flow must work end-to-end (discover → score → propose → approve → execute → track). No dead ends.
+7. **Complete pipelines** — Every user flow must work end-to-end (discover → score → propose → approve → execute → track → exit). No dead ends.
+8. **Deterministic-first monitoring** — Position exit checks use numeric thresholds every 60s (cheap, fast). AI analysis runs selectively every 5 min only when drift triggers fire (approaching thresholds, stale positions). Max 3 LLM calls per cycle to respect Gemini free-tier rate limits.

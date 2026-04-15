@@ -98,22 +98,83 @@ async def execute_approved_action(action: dict, ws_manager=None) -> dict:
             return {"status": "executed", "tx_hash": tx_hash, "position_id": position_id}
 
         elif action_type == "sell":
-            token_amount = action.get("tx_preview", "{}")
-            if isinstance(token_amount, str):
+            # Extract token amount from tx_preview
+            token_amount = 0.0
+            tx_preview_str = action.get("tx_preview", "{}")
+            if isinstance(tx_preview_str, str):
                 try:
-                    preview = json.loads(token_amount)
-                    token_amount = preview.get("token_amount", "0")
-                except json.JSONDecodeError:
-                    token_amount = "0"
+                    preview = json.loads(tx_preview_str)
+                    token_amount = float(preview.get("token_amount", 0))
+                except (json.JSONDecodeError, ValueError):
+                    pass
 
-            amount_wei = str(int(float(token_amount) * 10**18))
-            result = await cli.sell(token_address, amount_wei)
+            if token_amount <= 0:
+                return {"status": "error", "message": "No token amount to sell"}
 
+            amount_wei = str(int(token_amount * 10**18))
+
+            # Look up the active position
+            cursor = await db.execute(
+                "SELECT * FROM positions WHERE token_address = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
+                (token_address,),
+            )
+            position = await cursor.fetchone()
+            position_id = position["id"] if position else None
+            entry_amount = float(position["entry_amount_bnb"]) if position else amount_bnb
+
+            # Get sell quote for slippage protection
+            slippage_pct = float(action.get("slippage", 5))
+            min_funds_wei = "0"
+            estimated_funds = 0
+            try:
+                quote = await cli.quote_sell(token_address, amount_wei)
+                estimated_funds = int(quote.get("estimatedCost", 0) or quote.get("estimatedAmount", 0) or 0)
+                if estimated_funds > 0:
+                    min_funds_wei = str(int(estimated_funds * (1 - slippage_pct / 100)))
+            except Exception as e:
+                print(f"[Executor] Sell quote failed, proceeding without slippage protection: {e}")
+
+            result = await cli.sell(token_address, amount_wei, min_funds_wei)
             tx_hash = result.get("txHash", result.get("hash", ""))
 
+            # Compute exit values from quote
+            exit_amount_bnb = estimated_funds / 10**18 if estimated_funds > 0 else 0
+            exit_price = exit_amount_bnb / token_amount if token_amount > 0 else 0
+            pnl = exit_amount_bnb - entry_amount
+
+            # Close the position
+            if position_id:
+                await db.execute(
+                    """UPDATE positions SET status = 'closed', exit_price = ?, exit_amount_bnb = ?,
+                       pnl_bnb = ?, closed_at = ? WHERE id = ?""",
+                    (exit_price, exit_amount_bnb, round(pnl, 8), now, position_id),
+                )
+
+            # Record the sell trade
+            await db.execute(
+                """INSERT INTO trades (position_id, token_address, side, amount_bnb,
+                   token_quantity, price, tx_hash, slippage, approval_mode, executed_at)
+                   VALUES (?, ?, 'sell', ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    position_id,
+                    token_address,
+                    exit_amount_bnb,
+                    token_amount,
+                    exit_price,
+                    tx_hash,
+                    slippage_pct,
+                    action.get("persona", ""),
+                    now,
+                ),
+            )
+
+            # Log activity
             await db.execute(
                 "INSERT INTO activity (event_type, token_address, detail, created_at) VALUES (?, ?, ?, ?)",
-                ("trade_executed", token_address, json.dumps({"side": "sell", "tx_hash": tx_hash}), now),
+                ("trade_executed", token_address, json.dumps({
+                    "side": "sell", "amount_bnb": round(exit_amount_bnb, 8),
+                    "tx_hash": tx_hash, "pnl_bnb": round(pnl, 8),
+                }), now),
             )
             await db.commit()
 
@@ -123,9 +184,12 @@ async def execute_approved_action(action: dict, ws_manager=None) -> dict:
                     "token_address": token_address,
                     "side": "sell",
                     "tx_hash": tx_hash,
+                    "position_id": position_id,
+                    "exit_amount_bnb": round(exit_amount_bnb, 8),
+                    "pnl_bnb": round(pnl, 8),
                 })
 
-            return {"status": "executed", "tx_hash": tx_hash}
+            return {"status": "executed", "tx_hash": tx_hash, "position_id": position_id, "pnl_bnb": round(pnl, 8)}
 
         return {"status": "error", "message": f"Unknown action type: {action_type}"}
     except Exception as e:

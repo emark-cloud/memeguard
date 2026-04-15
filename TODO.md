@@ -45,7 +45,16 @@
 - [x] Approval modal: TX preview with amount, slippage, estimated tokens, min tokens, approve/reject
 - [x] Position tracker background job: update prices, compute PnL, propose exits (`position_tracker.py`)
 - [x] Auto-propose actions: scanner → score → persona decides → approval gate → pending_action + broadcast
-- [ ] End-to-end test: scanner → score → persona recommends → approve → execute → track
+- [x] End-to-end buy loop: scanner → score → propose → approve → buy on-chain → position tracked (verified with 0.0001 BNB)
+
+### Sell Flow & Position Management
+- [ ] Complete sell executor: sell quote for slippage protection, position closure, trade recording, PnL fields
+- [ ] Configurable take-profit/stop-loss thresholds (user-settable in Settings, replaces hardcoded 100%/-50%)
+- [ ] Auto-sell mode: automatic execution at thresholds without requiring approval
+- [ ] AI-driven position monitoring: Gemini analyzes positions every 5 min, proposes exits with reasoning
+  - Drift detection: PnL approaching thresholds, stale positions, holder concentration changes
+  - Capped at 3 LLM calls per cycle (stays within 15 RPM free tier)
+- [ ] End-to-end sell loop: position tracker proposes → approve/auto-sell → execute → position closed
 
 ### AI Depth (competitive edge — targets Innovation criterion)
 - [x] Interactive AI chat advisor: backend `/api/chat` endpoint + frontend ChatPanel component
@@ -59,7 +68,10 @@
 - [x] Escalation pipeline: quick deterministic scan for GREEN/RED, deep AI analysis only for AMBER tokens
   - `deep_analyze_amber()` returns recommendation (lean_buy/lean_skip/watch) with confidence + analysis
 
-### Expanded WebSocket Events
+### Real-Time Alerting
+- [ ] Toast notification system: real-time alerts for WebSocket events (trade_executed, action_proposed, risk_alert)
+  - Position update toasts filtered to milestones only (50%+, 100%+, -40%+) to prevent spam
+  - Max 5 visible, auto-dismiss after 5s, Binance-themed colors
 - [x] `action_proposed` — new trade opportunity pending approval
 - [x] `trade_executed` — buy/sell completed with tx details
 - [x] `position_update` — PnL change (periodic, from position tracker)
@@ -68,7 +80,8 @@
 
 ### Verify Phase 2
 - [x] **Auto-propose pipeline:** scanner → score → persona → approval gate → pending_action (verified: 10+ pending actions auto-created)
-- [ ] **Full trade loop:** approve → execute → track position (requires funded wallet)
+- [x] **Full buy loop:** approve → execute → track position (verified: 0.0001 BNB trade, tx on-chain, position recorded)
+- [ ] **Full sell loop:** position tracker proposes exit → approve/auto-sell → execute → position closed
 - [x] **AI advisor:** chat endpoint + frontend ChatPanel (graceful fallback without Gemini key)
 - [x] **Live dashboard:** WebSocket events update UI without refresh
 
@@ -82,7 +95,6 @@
 - [ ] Deployment: Frontend → Vercel, Backend Dockerfile (Python + Node.js) → Railway
 
 ### Medium Priority (Completeness)
-- [ ] Post-trade monitoring: price alerts, momentum loss detection, exit signals
 - [ ] Behavioral nudge: track overrides, show outcome summary on Dashboard ("You overrode 3 red signals, 2 rugged")
 - [ ] Watchlist management UI on Settings page
 - [ ] Volume consistency signal: replace stub with real implementation (CLI events analysis)

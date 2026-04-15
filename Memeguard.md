@@ -219,6 +219,43 @@ A radar chart or stacked signal bar visualization for the 8-signal breakdown on 
 - Instant visual comparison between tokens
 - Screenshot-worthy for community voting
 
+### M. AI-Driven Position Monitoring
+
+**Targets: Innovation criterion (30% of expert score)**
+
+Continuous AI-powered position analysis that goes beyond simple price-based stop-loss/take-profit. The system combines deterministic threshold checks with selective AI analysis.
+
+- **Deterministic layer (every 60s):** Checks positions against user-configurable take-profit/stop-loss thresholds. Fast, cheap, no LLM cost.
+- **AI layer (every 5 min, selective):** Calls Gemini to analyze positions where drift triggers fire:
+  - PnL approaching stop-loss (-30% to threshold) or take-profit (50% to threshold)
+  - Holder concentration changed significantly since entry
+  - Position stale (>30 min, <5% price movement)
+- AI returns structured `{ recommendation: hold|exit, confidence: 0-100, reasoning }` — proposes exit with natural-language rationale if confidence >= 70
+- Capped at 3 LLM calls per cycle to stay within Gemini free-tier (15 RPM)
+
+### N. Configurable Auto-Sell
+
+**Targets: Practical Value criterion (20% of expert score)**
+
+User-configurable exit strategy with optional automatic execution:
+
+- **Take-profit threshold** (default 100%): position tracker proposes sell when PnL exceeds this
+- **Stop-loss threshold** (default -50%): position tracker proposes sell when PnL drops below this
+- **Auto-sell toggle** (default off): when enabled, sells execute immediately at thresholds without user approval — separate from the buy approval mode, since users may want auto-protection even in approve_each mode
+- Settings UI: "Exit Strategy" section with numeric inputs + toggle switch
+
+### O. Real-Time Toast Notifications
+
+**Targets: Presentation criterion (20% of expert score) + Practical Value (20%)**
+
+Real-time visual alerts for important events, powered by the existing WebSocket infrastructure:
+
+- Toast notifications appear top-right, auto-dismiss after 5 seconds
+- Event-specific styling: trade executed (green), action proposed (gold), risk alert (red)
+- Position update toasts filtered to milestones only (50%+, 100%+, -40%+) to prevent spam
+- Max 5 visible toasts, click to dismiss early
+- Binance-themed color coding matching the dark UI
+
 ---
 
 ## 5. Non-Goals (v1)
@@ -267,11 +304,13 @@ Agent detects new token or market signal
 ### Flow 3: Post-Trade Monitoring
 
 ```
-Agent watches active position
-    → Monitors price, volume, liquidity changes
-    → Detects momentum loss or abnormal activity
-    → Suggests hold / take profit / exit
-    → User approves the next action
+Agent watches active position (60s cycle)
+    → Checks PnL against user-configured take-profit / stop-loss thresholds
+    → Every 5 min: AI analyzes drift triggers (approaching thresholds, stale positions, holder changes)
+    → Proposes exit with rationale (numeric or AI-generated)
+    → If auto-sell enabled: executes immediately
+    → If auto-sell disabled: user approves the exit via toast notification
+    → Position closed, PnL recorded
 ```
 
 ### Flow 4: Reviewing Avoided Risks
@@ -336,6 +375,7 @@ User opens "What I Avoided" tab
 - Persona selection (switch anytime)
 - Budget caps (all configurable)
 - Approval mode
+- Exit strategy: take-profit %, stop-loss %, auto-sell toggle
 - Wallet management
 - Agent wallet ERC-8004 registration
 - Watchlist management
@@ -664,36 +704,44 @@ CREATE INDEX idx_activity_token ON activity (token_address);
 
 ### Phase 2 — The Brain (IN PROGRESS)
 
-**Goal:** End-to-end trade loop with AI depth and position tracking.
+**Goal:** End-to-end trade loop (buy + sell) with AI depth, position tracking, and real-time alerting.
 
 #### Core Pipeline
 - [x] Complete risk scoring engine: all 8 signals (done in Phase 1)
-- [x] LLM integration (Gemini) for rationale generation (service built, needs API key)
+- [x] LLM integration (Gemini) for rationale generation
 - [x] Opportunity detail page (full risk breakdown + rationale + action)
 - [x] Persona action engine (rules that map score + persona → action)
-- [x] Approval gate system (4 modes)
-- [x] Trade executor (buy/sell via CLI)
+- [x] Approval gate system (4 modes — `approval_gate.py`)
+- [x] Trade executor (buy/sell via CLI, with slippage protection via quote)
 - [x] Activity feed page
 - [x] WebSocket for live updates
-- [ ] Transaction builder integration: quote via CLI → slippage calc → TxPreview display
-- [ ] Approval modal: TX preview with amount, slippage, gas, approve/reject buttons
-- [ ] Position tracker background job: update prices, compute PnL, propose exits
-- [ ] Auto-propose actions: scanner → score → persona decides → auto-create pending_action + broadcast via WebSocket
-- [ ] End-to-end test: scanner → score → persona recommends → approve → execute → track
+- [x] Transaction builder integration: quote via CLI → slippage calc → TxPreview display (`tx_builder.py`)
+- [x] Approval modal: TX preview with amount, slippage, estimated tokens, min tokens, approve/reject
+- [x] Position tracker background job: update prices, compute PnL, propose exits (`position_tracker.py`)
+- [x] Auto-propose actions: scanner → score → persona decides → approval gate → pending_action + broadcast
+- [x] End-to-end buy loop: verified with 0.0001 BNB trade on-chain
+
+#### Sell Flow & Position Management
+- [ ] Complete sell executor: sell quote, slippage protection, position closure, trade recording, PnL fields
+- [ ] Configurable take-profit/stop-loss thresholds (Settings UI, replaces hardcoded 100%/-50%)
+- [ ] Auto-sell mode: automatic sell execution at thresholds without approval
+- [ ] AI-driven position monitoring: Gemini exit analysis every 5 min with drift detection
+- [ ] End-to-end sell loop: position tracker proposes → approve/auto-sell → execute → position closed
 
 #### AI Depth (Competitive Edge)
-- [ ] Interactive AI chat advisor: `POST /api/chat` endpoint + frontend chat panel on Dashboard/OpportunityDetail
-- [ ] Multi-signal narrative synthesis: enhanced LLM prompt correlating all 8 signals into a pattern-detecting narrative
-- [ ] Escalation pipeline: quick deterministic scan for GREEN/RED, deep AI analysis reserved for AMBER tokens
+- [x] Interactive AI chat advisor: `POST /api/chat` endpoint + frontend ChatPanel on Dashboard/OpportunityDetail
+- [x] Multi-signal narrative synthesis: enhanced LLM prompt correlating all 8 signals into a pattern-detecting narrative
+- [x] Escalation pipeline: quick deterministic scan for GREEN/RED, deep AI analysis reserved for AMBER tokens
 
-#### Expanded WebSocket Events
-- [ ] `action_proposed` — trade opportunity pending approval
-- [ ] `trade_executed` — buy/sell completed
-- [ ] `position_update` — PnL change (periodic)
-- [ ] `risk_alert` — token grade change or rug detection
-- [ ] `avoided_update` — "dodged a bullet" notification
+#### Real-Time Alerting
+- [x] `action_proposed` — trade opportunity pending approval
+- [x] `trade_executed` — buy/sell completed with tx details
+- [x] `position_update` — PnL change (periodic, from position tracker)
+- [x] `risk_alert` — token grade changed on rescore
+- [ ] Toast notification system: real-time visual alerts for all WebSocket events
+- [ ] `avoided_update` — "dodged a bullet" notification (deferred to Phase 3)
 
-**End of Phase 2 deliverable:** Full trade loop works with AI advisor. Agent finds token, scores it, synthesizes a narrative, proposes trade, user can ask questions via chat, approves, trade executes, position tracked. Dashboard feels alive with real-time WebSocket events.
+**End of Phase 2 deliverable:** Full trade loop (buy + sell) works with AI advisor and AI-driven position monitoring. Agent finds token, scores it, synthesizes a narrative, proposes trade, user can ask questions via chat, approves, trade executes, position tracked with AI exit analysis. Sells execute with configurable thresholds and optional auto-sell. Dashboard shows real-time toast notifications for all important events.
 
 ### Phase 3 — Polish & Demo Features
 
@@ -706,7 +754,6 @@ CREATE INDEX idx_activity_token ON activity (token_address);
 - [ ] Deployment: Frontend → Vercel, Backend Dockerfile (Python + Node.js) → Railway
 
 #### Medium Priority (Completeness)
-- [ ] Post-trade monitoring: price alerts, momentum loss detection, exit signals
 - [ ] Behavioral nudge: track overrides, show outcome summary on Dashboard
 - [ ] Watchlist management UI on Settings page
 - [ ] Volume consistency signal: replace stub with real implementation

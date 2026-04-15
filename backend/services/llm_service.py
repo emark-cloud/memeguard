@@ -153,6 +153,78 @@ ANALYSIS: [2-3 sentences explaining your reasoning]"""
             print(f"[LLM] Deep analysis error: {e}")
             return {"recommendation": "watch", "confidence": 50, "analysis": f"Analysis failed: {e}"}
 
+    async def analyze_position_exit(self, context: dict) -> dict:
+        """AI-driven position exit analysis.
+
+        Returns:
+          - recommendation: "hold" / "exit"
+          - confidence: 0-100
+          - reasoning: explanation
+        """
+        if not self.client:
+            return {"recommendation": "hold", "confidence": 0, "reasoning": "LLM unavailable"}
+
+        prompt = f"""You are MemeGuard's position monitoring AI for Four.meme tokens on BNB Chain.
+Analyze whether this active position should be exited.
+
+Position data:
+- Token: {context.get('token_address', '?')}
+- Entry price: {context.get('entry_price', '?')} BNB/token
+- Current PnL: {context.get('pnl_pct', 0):.1f}%
+- Position age: {context.get('position_age', '?')}
+- Entry risk grade: {context.get('entry_risk_score', '?')}
+
+Current on-chain signals:
+- Top 5 holders own: {context.get('top5_holder_pct', '?')}% of supply
+- Largest single wallet: {context.get('max_single_holder_pct', '?')}%
+- Unique holders: {context.get('unique_holders', '?')}
+
+Consider:
+1. Is holder concentration increasing (whale accumulation before dump)?
+2. Is the position stale with no momentum?
+3. Are there signs of organic growth or artificial activity?
+4. Given the PnL%, is the risk/reward still favorable?
+
+Respond in this exact format:
+RECOMMENDATION: hold OR exit
+CONFIDENCE: [0-100]
+REASONING: [1-2 sentences explaining why, referencing specific signals]"""
+
+        try:
+            from google.genai import types
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.2,
+                    max_output_tokens=200,
+                ),
+            )
+            text = response.text.strip()
+
+            recommendation = "hold"
+            confidence = 50
+            reasoning = text
+
+            for line in text.split("\n"):
+                line = line.strip()
+                if line.startswith("RECOMMENDATION:"):
+                    rec = line.split(":", 1)[1].strip().lower()
+                    if rec in ("hold", "exit"):
+                        recommendation = rec
+                elif line.startswith("CONFIDENCE:"):
+                    try:
+                        confidence = int(line.split(":", 1)[1].strip())
+                    except ValueError:
+                        pass
+                elif line.startswith("REASONING:"):
+                    reasoning = line.split(":", 1)[1].strip()
+
+            return {"recommendation": recommendation, "confidence": confidence, "reasoning": reasoning}
+        except Exception as e:
+            print(f"[LLM] Position analysis error: {e}")
+            return {"recommendation": "hold", "confidence": 0, "reasoning": f"Analysis failed: {e}"}
+
     async def classify_description(self, description: str) -> str:
         """Classify a token description as legit/scam/hype."""
         if not self.client or not description:

@@ -43,3 +43,9 @@ body {
   background: var(--bg-hover);
   border-radius: 3px;
 }
+
+/* Toast notification animation */
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}

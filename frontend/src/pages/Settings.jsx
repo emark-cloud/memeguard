@@ -72,6 +72,56 @@ export default function Settings() {
         </div>
       </section>
 
+      {/* Exit Strategy */}
+      <section className="mb-8">
+        <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">Exit Strategy</h2>
+        <div className="bg-[var(--bg-card)] rounded-xl p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <label className="text-sm text-[var(--text-secondary)]">Take profit (%)</label>
+            <input
+              type="number"
+              step="10"
+              min="10"
+              value={config.take_profit_pct || ''}
+              onChange={(e) => update('take_profit_pct', e.target.value)}
+              className="w-32 bg-[var(--bg-secondary)] border border-[var(--border)] rounded px-3 py-1.5 text-sm text-[var(--text-primary)] text-right outline-none focus:border-[var(--accent-gold)]"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <label className="text-sm text-[var(--text-secondary)]">Stop loss (%)</label>
+            <input
+              type="number"
+              step="5"
+              min="-100"
+              max="0"
+              value={config.stop_loss_pct || ''}
+              onChange={(e) => update('stop_loss_pct', e.target.value)}
+              className="w-32 bg-[var(--bg-secondary)] border border-[var(--border)] rounded px-3 py-1.5 text-sm text-[var(--text-primary)] text-right outline-none focus:border-[var(--accent-gold)]"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-[var(--text-secondary)]">Auto-sell at thresholds</label>
+              <p className="text-xs text-[var(--text-secondary)] opacity-60 mt-0.5">
+                Automatically execute sells when take-profit or stop-loss is hit
+              </p>
+            </div>
+            <button
+              onClick={() => update('auto_sell_enabled', config.auto_sell_enabled === 'true' ? 'false' : 'true')}
+              className={`w-11 h-6 rounded-full relative transition-colors cursor-pointer ${
+                config.auto_sell_enabled === 'true' ? 'bg-[#0ECB81]' : 'bg-[var(--bg-secondary)]'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+                  config.auto_sell_enabled === 'true' ? 'translate-x-5' : ''
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+      </section>
+
       {/* Budget Caps */}
       <section className="mb-8">
         <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">Budget Caps</h2>

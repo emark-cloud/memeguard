@@ -25,7 +25,7 @@ async def update_config(update: ConfigUpdate):
     valid_keys = {
         "persona", "approval_mode", "max_per_trade_bnb", "max_per_day_bnb",
         "max_active_positions", "max_slippage_pct", "cooldown_seconds",
-        "min_liquidity_usd",
+        "min_liquidity_usd", "take_profit_pct", "stop_loss_pct", "auto_sell_enabled",
     }
     if update.key not in valid_keys:
         return JSONResponse(content={"error": f"Invalid config key. Valid keys: {sorted(valid_keys)}"}, status_code=400)

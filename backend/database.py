@@ -166,6 +166,9 @@ DEFAULT_CONFIG = {
     "max_slippage_pct": "5.0",
     "cooldown_seconds": "60",
     "min_liquidity_usd": "500",
+    "take_profit_pct": "100",
+    "stop_loss_pct": "-50",
+    "auto_sell_enabled": "false",
 }
 
 
