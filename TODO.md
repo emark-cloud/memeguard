@@ -37,37 +37,40 @@
 - [x] LLM integration (Gemini) for rationale generation
 - [x] Opportunity detail page (full risk breakdown + rationale + action)
 - [x] Persona action engine (rules that map score + persona → action)
-- [x] Approval gate system (4 modes — service exists)
-- [x] Trade executor (buy/sell via CLI)
+- [x] Approval gate system (4 modes — `approval_gate.py`)
+- [x] Trade executor (buy/sell via CLI, with slippage protection via quote)
 - [x] Activity feed page
 - [x] WebSocket for live updates
-- [ ] Transaction builder integration: quote via CLI → slippage calc → TxPreview display
-- [ ] Approval modal: TX preview with amount, slippage, gas, approve/reject buttons
-- [ ] Position tracker background job: update prices, compute PnL, propose exits
-- [ ] Auto-propose actions: scanner → score → persona decides → auto-create pending_action + broadcast
+- [x] Transaction builder integration: quote via CLI → slippage calc → TxPreview display (`tx_builder.py`)
+- [x] Approval modal: TX preview with amount, slippage, estimated tokens, min tokens, approve/reject
+- [x] Position tracker background job: update prices, compute PnL, propose exits (`position_tracker.py`)
+- [x] Auto-propose actions: scanner → score → persona decides → approval gate → pending_action + broadcast
 - [ ] End-to-end test: scanner → score → persona recommends → approve → execute → track
 
 ### AI Depth (competitive edge — targets Innovation criterion)
-- [ ] Interactive AI chat advisor: backend `/api/chat` endpoint + frontend chat panel
-  - Users ask questions about specific tokens ("Why is this risky?", "Compare to last 5 tokens")
-  - Context-aware: pulls token risk data, position history, persona config into prompt
+- [x] Interactive AI chat advisor: backend `/api/chat` endpoint + frontend ChatPanel component
+  - Context-aware: pulls token risk data, positions, persona config into prompt
   - Conversational memory within session (last N messages)
-- [ ] Multi-signal narrative synthesis: enhanced LLM prompt that correlates signals
-  - Cross-signal pattern detection ("creator launched 3 tokens + top holder 40% = pump-and-dump pattern")
-  - Replace one-line-per-signal with a cohesive narrative rationale
-- [ ] Escalation pipeline: quick deterministic scan for GREEN/RED, deep AI analysis only for AMBER tokens
+  - Token-scoped chat on OpportunityDetail page
+  - Suggested questions for new users
+- [x] Multi-signal narrative synthesis: enhanced LLM prompt that correlates signals
+  - Cross-signal pattern detection ("serial creator + high concentration = pump-and-dump setup")
+  - Cohesive narrative rationale instead of per-signal summaries
+- [x] Escalation pipeline: quick deterministic scan for GREEN/RED, deep AI analysis only for AMBER tokens
+  - `deep_analyze_amber()` returns recommendation (lean_buy/lean_skip/watch) with confidence + analysis
 
 ### Expanded WebSocket Events
-- [ ] `action_proposed` — new trade opportunity pending approval
-- [ ] `trade_executed` — buy/sell completed with tx details
-- [ ] `position_update` — PnL change (periodic)
-- [ ] `risk_alert` — token grade changed or rug detected
-- [ ] `avoided_update` — "dodged a bullet" notification
+- [x] `action_proposed` — new trade opportunity pending approval
+- [x] `trade_executed` — buy/sell completed with tx details
+- [x] `position_update` — PnL change (periodic, from position tracker)
+- [x] `risk_alert` — token grade changed on rescore
+- [ ] `avoided_update` — "dodged a bullet" notification (deferred to Phase 3 avoided tracker)
 
 ### Verify Phase 2
-- [ ] **Full trade loop:** find token → score → explain → propose → approve → execute → track position
-- [ ] **AI advisor:** ask "why is this token risky?" and get a contextual answer
-- [ ] **Live dashboard:** WebSocket events update UI without refresh
+- [x] **Auto-propose pipeline:** scanner → score → persona → approval gate → pending_action (verified: 10+ pending actions auto-created)
+- [ ] **Full trade loop:** approve → execute → track position (requires funded wallet)
+- [x] **AI advisor:** chat endpoint + frontend ChatPanel (graceful fallback without Gemini key)
+- [x] **Live dashboard:** WebSocket events update UI without refresh
 
 ## Phase 3: Polish & Demo Features
 **Goal:** Demo-ready with killer differentiators and visual polish. Ordered by judging impact.

@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timezone
 from dataclasses import dataclass, asdict
 
-from database import get_db
+from database import get_db, get_all_config
 from clients.bsc_web3 import BSCWeb3Client
 from clients.market_api import MarketContext
 
@@ -368,10 +368,16 @@ async def score_token(token_address: str, ws_manager=None):
         # Generate LLM rationale
         risk_detail = {s["name"]: s for s in result.signals}
         rationale = result.primary_risk  # fallback
+        escalation = None
         try:
             from services.llm_service import get_llm_service
             llm = get_llm_service()
             rationale = await llm.generate_rationale(token_data, risk_detail)
+
+            # Escalation: deep AI analysis for AMBER tokens
+            if result.grade == "amber":
+                escalation = await llm.deep_analyze_amber(token_data, risk_detail)
+                rationale += f"\n\n[Deep Analysis] {escalation.get('analysis', '')}"
         except Exception as e:
             print(f"[RiskEngine] LLM rationale error: {e}")
 
@@ -424,5 +430,121 @@ async def score_token(token_address: str, ws_manager=None):
                 "primary_risk": result.primary_risk,
             })
 
+            # Risk alert on grade change
+            old_grade = token_data.get("risk_score")
+            if old_grade and old_grade != result.grade:
+                await ws_manager.broadcast("risk_alert", {
+                    "address": token_address,
+                    "old_grade": old_grade,
+                    "new_grade": result.grade,
+                    "reason": result.primary_risk,
+                })
+
+        # Auto-propose: persona decides → approval gate → pending action
+        if result.grade != "red":
+            try:
+                await _auto_propose(db, token_address, token_data, result, rationale, ws_manager)
+            except Exception as e:
+                print(f"[RiskEngine] Auto-propose error: {e}")
+
     finally:
         await db.close()
+
+
+async def _auto_propose(db, token_address, token_data, result, rationale, ws_manager):
+    """Run persona engine and approval gate to auto-create pending actions."""
+    from services.persona_engine import decide_action
+    from services.approval_gate import check_approval
+
+    # Get current position count and daily spend
+    cursor = await db.execute("SELECT COUNT(*) as cnt FROM positions WHERE status = 'active'")
+    active_positions = (await cursor.fetchone())["cnt"]
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    cursor = await db.execute(
+        "SELECT COALESCE(SUM(amount_bnb), 0) as spent FROM trades WHERE executed_at >= ?",
+        (today,),
+    )
+    budget_used = (await cursor.fetchone())["spent"]
+
+    action = await decide_action(
+        risk_grade=result.grade,
+        risk_percentage=result.percentage,
+        token_data=token_data,
+        active_positions=active_positions,
+        budget_used_today=budget_used,
+    )
+
+    if action.action != "buy":
+        return
+
+    # Check approval gate
+    gate_result = await check_approval(action.action, action.amount_bnb, result.grade)
+    if gate_result == "blocked":
+        return
+
+    # Check for existing pending action on this token
+    cursor = await db.execute(
+        "SELECT id FROM pending_actions WHERE token_address = ? AND status = 'pending'",
+        (token_address,),
+    )
+    if await cursor.fetchone():
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Build tx preview
+    tx_preview = "{}"
+    try:
+        from services.tx_builder import build_buy_preview, preview_to_json
+        preview = await build_buy_preview(token_address, action.amount_bnb, action.slippage)
+        tx_preview = preview_to_json(preview)
+    except Exception as e:
+        print(f"[RiskEngine] TX preview error: {e}")
+
+    config = await get_all_config()
+    persona_name = config.get("persona", "momentum")
+
+    await db.execute(
+        """INSERT INTO pending_actions (token_address, action_type, amount_bnb, slippage,
+           persona, risk_score, rationale, tx_preview, status, created_at)
+           VALUES (?, 'buy', ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            token_address,
+            action.amount_bnb,
+            action.slippage,
+            persona_name,
+            result.grade,
+            rationale,
+            tx_preview,
+            "auto" if gate_result == "auto" else "pending",
+            now,
+        ),
+    )
+    await db.commit()
+
+    if gate_result == "auto":
+        # Auto-execute
+        cursor = await db.execute(
+            "SELECT * FROM pending_actions WHERE token_address = ? AND status = 'auto' ORDER BY created_at DESC LIMIT 1",
+            (token_address,),
+        )
+        pending = await cursor.fetchone()
+        if pending:
+            await db.execute(
+                "UPDATE pending_actions SET status = 'approved', resolved_at = ? WHERE id = ?",
+                (now, pending["id"]),
+            )
+            await db.commit()
+            from services.executor import execute_approved_action
+            await execute_approved_action(dict(pending))
+
+    # Broadcast action_proposed
+    if ws_manager:
+        await ws_manager.broadcast("action_proposed", {
+            "token_address": token_address,
+            "action_type": "buy",
+            "amount_bnb": action.amount_bnb,
+            "risk_score": result.grade,
+            "rationale": rationale,
+        })

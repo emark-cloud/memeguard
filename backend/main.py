@@ -37,8 +37,9 @@ class ConnectionManager:
 
 ws_manager = ConnectionManager()
 
-# Scanner task reference (set during startup)
+# Background task references (set during startup)
 scanner_task: asyncio.Task | None = None
+position_tracker_task: asyncio.Task | None = None
 
 
 @asynccontextmanager
@@ -53,16 +54,23 @@ async def lifespan(app: FastAPI):
     scanner_task = asyncio.create_task(start_scanner(ws_manager))
     print(f"Scanner started (interval: {settings.scan_interval_seconds}s)")
 
+    # Start position tracker in background
+    from services.position_tracker import start_position_tracker
+    global position_tracker_task
+    position_tracker_task = asyncio.create_task(start_position_tracker(ws_manager))
+    print("Position tracker started (interval: 60s)")
+
     yield
 
     # Shutdown
-    if scanner_task:
-        scanner_task.cancel()
-        try:
-            await scanner_task
-        except asyncio.CancelledError:
-            pass
-    print("Scanner stopped.")
+    for task in [scanner_task, position_tracker_task]:
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+    print("Background tasks stopped.")
 
 
 app = FastAPI(
@@ -89,6 +97,7 @@ from routes.positions import router as positions_router
 from routes.actions import router as actions_router
 from routes.avoided import router as avoided_router
 from routes.watchlist import router as watchlist_router
+from routes.chat import router as chat_router
 
 app.include_router(tokens_router, prefix="/api")
 app.include_router(config_router, prefix="/api")
@@ -97,6 +106,7 @@ app.include_router(positions_router, prefix="/api")
 app.include_router(actions_router, prefix="/api")
 app.include_router(avoided_router, prefix="/api")
 app.include_router(watchlist_router, prefix="/api")
+app.include_router(chat_router, prefix="/api")
 
 
 @app.websocket("/ws")

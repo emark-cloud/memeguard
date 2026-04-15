@@ -15,7 +15,7 @@ class TradeAction:
 
 PERSONA_CONFIGS = {
     "conservative": {
-        "default_amount_bnb": 0.02,
+        "default_amount_bnb": 0.0001,
         "min_token_age_minutes": 10,
         "max_holder_concentration": 40,
         "required_grade": "green",
@@ -23,7 +23,7 @@ PERSONA_CONFIGS = {
         "bonding_curve_only": False,
     },
     "momentum": {
-        "default_amount_bnb": 0.05,
+        "default_amount_bnb": 0.0001,
         "min_token_age_minutes": 3,
         "max_holder_concentration": 50,
         "required_grade": "green",
@@ -31,7 +31,7 @@ PERSONA_CONFIGS = {
         "bonding_curve_only": False,
     },
     "sniper": {
-        "default_amount_bnb": 0.01,
+        "default_amount_bnb": 0.0001,
         "min_token_age_minutes": 0,
         "max_holder_concentration": 60,
         "required_grade": "amber",

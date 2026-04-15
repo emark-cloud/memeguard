@@ -9,6 +9,7 @@ import Positions from './pages/Positions'
 import Avoided from './pages/Avoided'
 import Activity from './pages/Activity'
 import Settings from './pages/Settings'
+import ChatPanel from './components/ChatPanel'
 import './index.css'
 
 const queryClient = new QueryClient()
@@ -30,6 +31,7 @@ function App() {
                 <Route path="/settings" element={<Settings />} />
               </Routes>
             </main>
+            <ChatPanel />
           </div>
         </BrowserRouter>
       </QueryClientProvider>

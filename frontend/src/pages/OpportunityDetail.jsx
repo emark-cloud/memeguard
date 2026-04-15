@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import RiskBadge from '../components/RiskBadge'
+import ChatPanel from '../components/ChatPanel'
 import { getToken, approveAction, rejectAction } from '../services/api'
 
 export default function OpportunityDetail() {
@@ -165,45 +166,71 @@ export default function OpportunityDetail() {
       )}
 
       {/* Approval section */}
-      {token.pending_action && token.pending_action.status === 'pending' && (
-        <div className="bg-[var(--bg-card)] rounded-xl p-6 border-2 border-[var(--accent-gold)]">
-          <h2 className="text-lg font-semibold text-[var(--accent-gold)] mb-2">
-            Proposed: {token.pending_action.action_type.toUpperCase()}
-          </h2>
-          <div className="grid grid-cols-2 gap-4 text-sm mb-4">
-            <div>
-              <span className="text-[var(--text-secondary)]">Amount</span>
-              <p className="text-[var(--text-primary)] font-medium">{token.pending_action.amount_bnb} BNB</p>
+      {token.pending_action && token.pending_action.status === 'pending' && (() => {
+        let txPreview = null
+        try {
+          txPreview = token.pending_action.tx_preview ? JSON.parse(token.pending_action.tx_preview) : null
+        } catch { /* ignore */ }
+
+        return (
+          <div className="bg-[var(--bg-card)] rounded-xl p-6 border-2 border-[var(--accent-gold)] mb-4">
+            <h2 className="text-lg font-semibold text-[var(--accent-gold)] mb-2">
+              Proposed: {token.pending_action.action_type.toUpperCase()}
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
+              <div>
+                <span className="text-[var(--text-secondary)]">Amount</span>
+                <p className="text-[var(--text-primary)] font-medium">{token.pending_action.amount_bnb} BNB</p>
+              </div>
+              <div>
+                <span className="text-[var(--text-secondary)]">Slippage</span>
+                <p className="text-[var(--text-primary)] font-medium">{token.pending_action.slippage || 5}%</p>
+              </div>
+              {txPreview?.estimated_tokens > 0 && (
+                <div>
+                  <span className="text-[var(--text-secondary)]">Est. Tokens</span>
+                  <p className="text-[var(--text-primary)] font-medium">
+                    {Number(txPreview.estimated_tokens).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+              )}
+              {txPreview?.min_tokens > 0 && (
+                <div>
+                  <span className="text-[var(--text-secondary)]">Min Tokens</span>
+                  <p className="text-[var(--text-primary)] font-medium">
+                    {Number(txPreview.min_tokens).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+              )}
             </div>
-            <div>
-              <span className="text-[var(--text-secondary)]">Slippage</span>
-              <p className="text-[var(--text-primary)] font-medium">{token.pending_action.slippage || 5}%</p>
+            {token.pending_action.rationale && (
+              <p className="text-[var(--text-secondary)] text-sm mb-4">{token.pending_action.rationale}</p>
+            )}
+            {actionError && (
+              <p className="text-[#F6465D] text-sm mb-3">{actionError}</p>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={handleApprove}
+                disabled={actionLoading}
+                className="flex-1 bg-[#0ECB81] text-black font-semibold py-2.5 rounded-lg cursor-pointer hover:opacity-90 disabled:opacity-50 transition-opacity"
+              >
+                {actionLoading ? 'Executing...' : 'Approve'}
+              </button>
+              <button
+                onClick={handleReject}
+                disabled={actionLoading}
+                className="flex-1 bg-[var(--bg-secondary)] text-[var(--text-primary)] font-semibold py-2.5 rounded-lg cursor-pointer border border-[var(--border)] hover:bg-[var(--bg-hover)] disabled:opacity-50 transition-colors"
+              >
+                Reject
+              </button>
             </div>
           </div>
-          {token.pending_action.rationale && (
-            <p className="text-[var(--text-secondary)] text-sm mb-4">{token.pending_action.rationale}</p>
-          )}
-          {actionError && (
-            <p className="text-[#F6465D] text-sm mb-3">{actionError}</p>
-          )}
-          <div className="flex gap-3">
-            <button
-              onClick={handleApprove}
-              disabled={actionLoading}
-              className="flex-1 bg-[#0ECB81] text-black font-semibold py-2.5 rounded-lg cursor-pointer hover:opacity-90 disabled:opacity-50 transition-opacity"
-            >
-              {actionLoading ? 'Executing...' : 'Approve'}
-            </button>
-            <button
-              onClick={handleReject}
-              disabled={actionLoading}
-              className="flex-1 bg-[var(--bg-secondary)] text-[var(--text-primary)] font-semibold py-2.5 rounded-lg cursor-pointer border border-[var(--border)] hover:bg-[var(--bg-hover)] disabled:opacity-50 transition-colors"
-            >
-              Reject
-            </button>
-          </div>
-        </div>
-      )}
+        )
+      })()}
+
+      {/* Token-scoped AI chat */}
+      <ChatPanel tokenAddress={token.address} tokenName={`${token.name} ($${token.symbol})`} />
     </div>
   )
 }

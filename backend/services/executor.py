@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from database import get_db
 
 
-async def execute_approved_action(action: dict) -> dict:
+async def execute_approved_action(action: dict, ws_manager=None) -> dict:
     """Execute a trade that was approved by the user."""
     from clients.fourmeme_cli import FourMemeCLI
 
@@ -25,17 +25,23 @@ async def execute_approved_action(action: dict) -> dict:
             # Get quote to compute min amount with slippage protection
             slippage_pct = float(action.get("slippage", 5))
             min_amount_wei = "0"
+            estimated_tokens = 0
             try:
-                quote = await cli.quote_buy(token_address, funds_wei)
-                estimated = int(quote.get("amount", 0) or quote.get("tokenAmount", 0) or 0)
-                if estimated > 0:
-                    min_amount_wei = str(int(estimated * (1 - slippage_pct / 100)))
+                quote = await cli.quote_buy(token_address, "0", funds_wei)
+                estimated_tokens = int(quote.get("estimatedAmount", 0) or quote.get("amount", 0) or 0)
+                if estimated_tokens > 0:
+                    min_amount_wei = str(int(estimated_tokens * (1 - slippage_pct / 100)))
             except Exception as e:
                 print(f"[Executor] Quote failed, proceeding without slippage protection: {e}")
 
             result = await cli.buy_by_funds(token_address, funds_wei, min_amount_wei)
 
             tx_hash = result.get("txHash", result.get("hash", ""))
+
+            # CLI only returns txHash; get token quantity from the pre-buy quote
+            # Convert from wei (18 decimals) to human-readable
+            token_quantity = estimated_tokens / 10**18 if estimated_tokens > 0 else 0
+            entry_price = amount_bnb / token_quantity if token_quantity > 0 else 0
 
             # Create position
             cursor = await db.execute(
@@ -44,9 +50,9 @@ async def execute_approved_action(action: dict) -> dict:
                    VALUES (?, ?, ?, ?, 'active', ?, ?)""",
                 (
                     token_address,
-                    result.get("price", 0),
+                    entry_price,
                     amount_bnb,
-                    result.get("tokenAmount", 0),
+                    token_quantity,
                     action.get("risk_score", ""),
                     now,
                 ),
@@ -62,8 +68,8 @@ async def execute_approved_action(action: dict) -> dict:
                     position_id,
                     token_address,
                     amount_bnb,
-                    result.get("tokenAmount", 0),
-                    result.get("price", 0),
+                    token_quantity,
+                    entry_price,
                     tx_hash,
                     float(action.get("slippage", 0)),
                     action.get("persona", ""),
@@ -78,6 +84,17 @@ async def execute_approved_action(action: dict) -> dict:
             )
 
             await db.commit()
+
+            # Broadcast trade_executed
+            if ws_manager:
+                await ws_manager.broadcast("trade_executed", {
+                    "token_address": token_address,
+                    "side": "buy",
+                    "amount_bnb": amount_bnb,
+                    "tx_hash": tx_hash,
+                    "position_id": position_id,
+                })
+
             return {"status": "executed", "tx_hash": tx_hash, "position_id": position_id}
 
         elif action_type == "sell":
@@ -99,6 +116,15 @@ async def execute_approved_action(action: dict) -> dict:
                 ("trade_executed", token_address, json.dumps({"side": "sell", "tx_hash": tx_hash}), now),
             )
             await db.commit()
+
+            # Broadcast trade_executed
+            if ws_manager:
+                await ws_manager.broadcast("trade_executed", {
+                    "token_address": token_address,
+                    "side": "sell",
+                    "tx_hash": tx_hash,
+                })
+
             return {"status": "executed", "tx_hash": tx_hash}
 
         return {"status": "error", "message": f"Unknown action type: {action_type}"}

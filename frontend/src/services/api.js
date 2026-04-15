@@ -80,5 +80,15 @@ export const removeWatchlistItem = (id) =>
 // Daily trade stats
 export const getDailyTradeStats = () => request('/trades/daily')
 
+// Chat advisor
+export const sendChatMessage = (message, tokenAddress = null) =>
+  request('/chat', {
+    method: 'POST',
+    body: JSON.stringify({ message, token_address: tokenAddress }),
+  })
+
+export const clearChatHistory = () =>
+  request('/chat/history', { method: 'DELETE' })
+
 // Health
 export const getHealth = () => request('/health')

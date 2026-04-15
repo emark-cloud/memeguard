@@ -56,6 +56,10 @@ async def approve_action(req: ActionResponse):
         )
         await db.commit()
 
+        # Mark session as approved for per-session mode
+        from services.approval_gate import mark_session_approved
+        mark_session_approved()
+
         # Trigger execution (imported here to avoid circular imports)
         from services.executor import execute_approved_action
         result = await execute_approved_action(dict(action))

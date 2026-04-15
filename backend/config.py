@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # Four.meme API
     fourmeme_api_base: str = Field(default="https://four.meme/meme-api/v1")
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": [".env", "../.env"], "env_file_encoding": "utf-8"}
 
 
 settings = Settings()
