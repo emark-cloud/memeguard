@@ -505,7 +505,7 @@ async def _auto_propose(db, token_address, token_data, result, rationale, ws_man
     config = await get_all_config()
     persona_name = config.get("persona", "momentum")
 
-    await db.execute(
+    cursor = await db.execute(
         """INSERT INTO pending_actions (token_address, action_type, amount_bnb, slippage,
            persona, risk_score, rationale, tx_preview, status, created_at)
            VALUES (?, 'buy', ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -521,23 +521,23 @@ async def _auto_propose(db, token_address, token_data, result, rationale, ws_man
             now,
         ),
     )
+    action_id = cursor.lastrowid
     await db.commit()
 
     if gate_result == "auto":
-        # Auto-execute
+        # Auto-execute: use lastrowid to avoid race with concurrent inserts
         cursor = await db.execute(
-            "SELECT * FROM pending_actions WHERE token_address = ? AND status = 'auto' ORDER BY created_at DESC LIMIT 1",
-            (token_address,),
+            "SELECT * FROM pending_actions WHERE id = ?", (action_id,)
         )
         pending = await cursor.fetchone()
         if pending:
             await db.execute(
                 "UPDATE pending_actions SET status = 'approved', resolved_at = ? WHERE id = ?",
-                (now, pending["id"]),
+                (now, action_id),
             )
             await db.commit()
             from services.executor import execute_approved_action
-            await execute_approved_action(dict(pending))
+            await execute_approved_action(dict(pending), ws_manager)
 
     # Broadcast action_proposed
     if ws_manager:

@@ -118,6 +118,8 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket)
+    except Exception:
+        ws_manager.disconnect(websocket)
 
 
 @app.get("/api/health")
@@ -125,4 +127,5 @@ async def health():
     return {
         "status": "ok",
         "scanner_running": scanner_task is not None and not scanner_task.done(),
+        "position_tracker_running": position_tracker_task is not None and not position_tracker_task.done(),
     }

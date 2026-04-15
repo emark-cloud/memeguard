@@ -28,6 +28,8 @@ async def execute_approved_action(action: dict, ws_manager=None) -> dict:
             estimated_tokens = 0
             try:
                 quote = await cli.quote_buy(token_address, "0", funds_wei)
+                if not isinstance(quote, dict):
+                    quote = {}
                 estimated_tokens = int(quote.get("estimatedAmount", 0) or quote.get("amount", 0) or 0)
                 if estimated_tokens > 0:
                     min_amount_wei = str(int(estimated_tokens * (1 - slippage_pct / 100)))
@@ -136,6 +138,8 @@ async def execute_approved_action(action: dict, ws_manager=None) -> dict:
             estimated_funds = 0
             try:
                 quote = await cli.quote_sell(token_address, amount_wei)
+                if not isinstance(quote, dict):
+                    quote = {}
                 estimated_funds = int(quote.get("estimatedCost", 0) or quote.get("estimatedAmount", 0) or 0)
                 if estimated_funds > 0:
                     min_funds_wei = str(int(estimated_funds * (1 - slippage_pct / 100)))

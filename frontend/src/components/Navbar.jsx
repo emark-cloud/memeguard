@@ -44,7 +44,7 @@ export default function Navbar() {
         </div>
 
         {/* Wallet */}
-        {isConnected ? (
+        {isConnected && address ? (
           <button
             onClick={disconnect}
             className="bg-[var(--bg-card)] text-[var(--text-primary)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm cursor-pointer hover:bg-[var(--bg-hover)] transition-colors"
