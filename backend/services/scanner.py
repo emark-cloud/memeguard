@@ -118,11 +118,17 @@ async def scan_new_tokens(api, ws_manager):
         if unscored:
             from services.risk_engine import score_token
 
+            # Cap parallel scorers: too much concurrency causes SQLite write
+            # contention (busy_timeout expiry) and bursts Gemini's per-minute
+            # quota. Three is enough to overlap LLM wait time with signal IO.
+            sem = asyncio.Semaphore(3)
+
             async def _safe_score(addr):
-                try:
-                    await score_token(addr, ws_manager)
-                except Exception as e:
-                    print(f"[Scanner] Scoring error for {addr}: {e}")
+                async with sem:
+                    try:
+                        await score_token(addr, ws_manager)
+                    except Exception as e:
+                        print(f"[Scanner] Scoring error for {addr}: {e}")
 
             await asyncio.gather(*[_safe_score(row["address"]) for row in unscored])
 

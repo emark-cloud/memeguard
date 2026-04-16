@@ -424,6 +424,19 @@ async def compute_risk_score(token_address: str, token_data: dict = None) -> Ris
     else:
         grade = "red"
 
+    # Hard-RED overrides for ghost listings. Weighted aggregation alone rates
+    # these AMBER because "first-time creator" and "not a tax token" are
+    # neutral-to-positive, but zero liquidity or single-wallet concentration
+    # make the token effectively untradeable. Force RED so they surface on
+    # the Avoided page instead of being pitched as AMBER opportunities.
+    signals_by_name = {s.name: s for s in signals}
+    liquidity_signal = signals_by_name.get("liquidity")
+    holders_signal = signals_by_name.get("holder_concentration")
+    if liquidity_signal and liquidity_signal.score <= 2:
+        grade = "red"
+    elif holders_signal and holders_signal.score <= 1:
+        grade = "red"
+
     # Find primary risk factor (lowest weighted score)
     worst = min(signals, key=lambda s: s.score * s.weight)
     primary_risk = f"{worst.name}: {worst.detail}"
@@ -437,58 +450,64 @@ async def compute_risk_score(token_address: str, token_data: dict = None) -> Ris
 
 
 async def score_token(token_address: str, ws_manager=None):
-    """Score a token and persist results to the database."""
+    """Score a token and persist results to the database.
+
+    The DB connection is intentionally released before the multi-second LLM
+    call and re-opened for the final writes. Holding the connection across
+    the LLM call serialized all concurrent scorers behind the busy_timeout
+    and produced "database is locked" errors under scan-cycle load.
+    """
+    # Phase 1: read token data, then close the connection before any slow work.
     db = await get_db()
     try:
-        # Get token data from DB
         cursor = await db.execute("SELECT * FROM tokens WHERE address = ?", (token_address,))
         token_row = await cursor.fetchone()
         if not token_row:
             return
-
         token_data = dict(token_row)
-        result = await compute_risk_score(token_address, token_data)
-        now = datetime.now(timezone.utc).isoformat()
+    finally:
+        await db.close()
 
-        # Generate LLM rationale
-        risk_detail = {s["name"]: s for s in result.signals}
-        rationale = result.primary_risk  # fallback
-        escalation = None
-        try:
-            from services.llm_service import get_llm_service
-            llm = get_llm_service()
-            rationale = await llm.generate_rationale(token_data, risk_detail)
+    # Phase 2: compute signals + LLM rationale without holding a DB connection.
+    result = await compute_risk_score(token_address, token_data)
+    now = datetime.now(timezone.utc).isoformat()
 
-            # Escalation: deep AI analysis for AMBER tokens
-            if result.grade == "amber":
-                escalation = await llm.deep_analyze_amber(token_data, risk_detail)
-                rationale += f"\n\n[Deep Analysis] {escalation.get('analysis', '')}"
-        except Exception as e:
-            print(f"[RiskEngine] LLM rationale error: {e}")
+    risk_detail = {s["name"]: s for s in result.signals}
+    rationale = result.primary_risk  # fallback
+    try:
+        from services.llm_service import get_llm_service
+        llm = get_llm_service()
+        rationale = await llm.generate_rationale(token_data, risk_detail)
 
-        # Update token with risk score
+        # Escalation: deep AI analysis for AMBER tokens
+        if result.grade == "amber":
+            escalation = await llm.deep_analyze_amber(token_data, risk_detail)
+            rationale += f"\n\n[Deep Analysis] {escalation.get('analysis', '')}"
+    except Exception as e:
+        print(f"[RiskEngine] LLM rationale error: {e}")
+
+    avoided_price = 0.0
+    if result.grade == "red":
+        info = await asyncio.to_thread(_get_web3().get_token_info, token_address)
+        avoided_price = info.get("lastPrice", 0) / 10**18 if info.get("lastPrice") else 0
+
+    # Phase 3: single short transaction for all writes.
+    db = await get_db()
+    try:
         await db.execute(
             """UPDATE tokens SET risk_score = ?, risk_detail = ?, risk_rationale = ?, last_checked = ?
                WHERE address = ?""",
             (result.grade, json.dumps(risk_detail), rationale, now, token_address),
         )
-
-        # Log scan event
         await db.execute(
             "INSERT INTO scans (token_address, scan_type, risk_score, created_at) VALUES (?, ?, ?, ?)",
             (token_address, "risk_score", result.grade, now),
         )
-
-        # Log activity
         await db.execute(
             "INSERT INTO activity (event_type, token_address, detail, created_at) VALUES (?, ?, ?, ?)",
             ("risk_scored", token_address, json.dumps({"grade": result.grade, "pct": result.percentage}), now),
         )
-
-        # If red, add to avoided tracker
         if result.grade == "red":
-            info = await asyncio.to_thread(_get_web3().get_token_info, token_address)
-            price = info.get("lastPrice", 0) / 10**18 if info.get("lastPrice") else 0
             await db.execute(
                 """INSERT OR IGNORE INTO avoided (token_address, token_name, risk_score, risk_rationale,
                    price_at_flag, estimated_savings_bnb, flagged_at)
@@ -498,12 +517,11 @@ async def score_token(token_address: str, ws_manager=None):
                     token_data.get("name", ""),
                     result.grade,
                     result.primary_risk,
-                    price,
+                    avoided_price,
                     0.05,  # default persona amount as estimated savings
                     now,
                 ),
             )
-
         await db.commit()
 
         # Broadcast to frontend
