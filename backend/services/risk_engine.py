@@ -3,6 +3,7 @@
 AI (LLM) is NOT used for scoring. Only for generating the plain-language rationale after.
 """
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from dataclasses import dataclass, asdict
@@ -397,20 +398,19 @@ async def compute_risk_score(token_address: str, token_data: dict = None) -> Ris
 
     creator = token_data.get("creator_address", "") or token_data.get("creator", "")
 
-    # Run deterministic signals
-    signals = [
-        score_creator_history(creator),
-        score_holder_concentration(token_address),
-        score_liquidity(token_address),
-        score_bonding_velocity(token_address),
-        score_tax_token(token_address),
-        score_volume_consistency(token_address),
-        score_social_signal(token_data),
-    ]
-
-    # Run async signal
-    market_signal = await score_market_context()
-    signals.append(market_signal)
+    # Run deterministic signals. The web3-backed ones are synchronous and would
+    # block the event loop, so fan them out via to_thread and await in parallel
+    # alongside the async market signal.
+    signals = list(await asyncio.gather(
+        asyncio.to_thread(score_creator_history, creator),
+        asyncio.to_thread(score_holder_concentration, token_address),
+        asyncio.to_thread(score_liquidity, token_address),
+        asyncio.to_thread(score_bonding_velocity, token_address),
+        asyncio.to_thread(score_tax_token, token_address),
+        asyncio.to_thread(score_volume_consistency, token_address),
+        asyncio.to_thread(score_social_signal, token_data),
+        score_market_context(),
+    ))
 
     # Weighted aggregation
     weighted_sum = sum(s.score * s.weight for s in signals)
@@ -487,7 +487,7 @@ async def score_token(token_address: str, ws_manager=None):
 
         # If red, add to avoided tracker
         if result.grade == "red":
-            info = _get_web3().get_token_info(token_address)
+            info = await asyncio.to_thread(_get_web3().get_token_info, token_address)
             price = info.get("lastPrice", 0) / 10**18 if info.get("lastPrice") else 0
             await db.execute(
                 """INSERT OR IGNORE INTO avoided (token_address, token_name, risk_score, risk_rationale,
