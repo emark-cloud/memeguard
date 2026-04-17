@@ -1,8 +1,18 @@
 """SQLite database initialization and async query helpers."""
 
+import time
+
 import aiosqlite
 import os
 from config import settings
+
+# get_all_config() is called from the scanner, position tracker, approval gate,
+# persona engine, and chat — roughly N+ times per scan cycle. Config only
+# changes on explicit Settings saves, so TTL-cache the read and invalidate on
+# writes. Not worth a whole connection pool, but this alone removes 10+
+# redundant SQLite opens per cycle.
+_CONFIG_TTL_S = 30.0
+_config_cache: tuple[float, dict] | None = None
 
 SCHEMA = """
 -- Token discoveries
@@ -150,10 +160,13 @@ CREATE INDEX IF NOT EXISTS idx_tokens_creator ON tokens (creator_address);
 CREATE INDEX IF NOT EXISTS idx_tokens_risk ON tokens (risk_score);
 CREATE INDEX IF NOT EXISTS idx_scans_token ON scans (token_address);
 CREATE INDEX IF NOT EXISTS idx_positions_status ON positions (status);
+CREATE INDEX IF NOT EXISTS idx_positions_token_status ON positions (token_address, status);
 CREATE INDEX IF NOT EXISTS idx_avoided_flagged ON avoided (flagged_at);
 CREATE INDEX IF NOT EXISTS idx_activity_type ON activity (event_type);
 CREATE INDEX IF NOT EXISTS idx_snapshots_token ON token_snapshots (token_address);
 CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_actions (status);
+CREATE INDEX IF NOT EXISTS idx_pending_token_status ON pending_actions (token_address, status);
+CREATE INDEX IF NOT EXISTS idx_trades_executed ON trades (executed_at);
 """
 
 # Default configuration values
@@ -215,14 +228,26 @@ async def get_config_value(key: str) -> str | None:
 
 
 async def get_all_config() -> dict:
-    """Get all config as a dict."""
+    """Get all config as a dict. Cached for _CONFIG_TTL_S seconds."""
+    global _config_cache
+    now = time.monotonic()
+    if _config_cache and (now - _config_cache[0]) < _CONFIG_TTL_S:
+        return dict(_config_cache[1])
     async with aiosqlite.connect(get_db_path()) as db:
         db.row_factory = aiosqlite.Row
         await db.execute("PRAGMA journal_mode=WAL")
         await db.execute("PRAGMA busy_timeout=5000")
         cursor = await db.execute("SELECT key, value FROM config")
         rows = await cursor.fetchall()
-        return {row["key"]: row["value"] for row in rows}
+        data = {row["key"]: row["value"] for row in rows}
+    _config_cache = (now, data)
+    return dict(data)
+
+
+def invalidate_config_cache():
+    """Drop the get_all_config cache. Call after any config write."""
+    global _config_cache
+    _config_cache = None
 
 
 async def set_config_value(key: str, value: str):
@@ -235,3 +260,4 @@ async def set_config_value(key: str, value: str):
             (key, value),
         )
         await db.commit()
+    invalidate_config_cache()

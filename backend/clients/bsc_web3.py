@@ -152,9 +152,12 @@ class BSCWeb3Client:
                 addresses.add(t["args"]["from"])
             addresses.discard("0x0000000000000000000000000000000000000000")
 
-            # Get balances for each holder
+            # Get balances for each holder.
+            # Cap at 20: public BSC RPCs rate-limit aggressively on back-to-back
+            # eth_calls, and we already see RemoteDisconnected errors at 50.
+            # Multicall3 upgrade is the proper fix; 20 is the stop-gap.
             balances = []
-            for holder_addr in list(addresses)[:50]:  # Limit to avoid too many calls
+            for holder_addr in list(addresses)[:20]:
                 try:
                     bal = token_contract.functions.balanceOf(holder_addr).call()
                     if bal > 0:
