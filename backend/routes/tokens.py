@@ -1,8 +1,12 @@
 """Token endpoints."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Path, Query
 from fastapi.responses import JSONResponse
 from database import get_db
+
+# BSC addresses are 0x + 40 hex chars. Enforcing at the route keeps typos and
+# hostile paths out of logs and avoids bogus SQL lookups.
+_ADDR_RE = r"^0x[a-fA-F0-9]{40}$"
 
 router = APIRouter(tags=["tokens"])
 
@@ -34,7 +38,7 @@ async def list_tokens(
 
 
 @router.get("/tokens/{address}")
-async def get_token(address: str):
+async def get_token(address: str = Path(pattern=_ADDR_RE)):
     """Get full token detail with risk breakdown."""
     db = await get_db()
     try:

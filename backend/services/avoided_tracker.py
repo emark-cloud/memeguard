@@ -72,16 +72,19 @@ async def _check_token_price(db, web3, ws_manager, token: dict, now: datetime):
 
     age_minutes = (now - flagged_dt).total_seconds() / 60
 
-    # Determine which price slot to fill
+    # Determine which price slot to fill by matching the *current* age bucket,
+    # not "first empty slot". If the backend was down for 24h, a token with
+    # age_minutes=1500 and all slots NULL would otherwise fill 1h with a
+    # 24h-old price, poisoning the signal.
     slot = None
-    if token["price_1h_later"] is None and age_minutes >= 60:
-        slot = "price_1h_later"
-    elif token["price_6h_later"] is None and age_minutes >= 360:
-        slot = "price_6h_later"
-    elif token["price_24h_later"] is None and age_minutes >= 1440:
+    if age_minutes >= 1440 and token["price_24h_later"] is None:
         slot = "price_24h_later"
-    else:
-        return  # Not time yet for any check
+    elif 360 <= age_minutes < 1440 and token["price_6h_later"] is None:
+        slot = "price_6h_later"
+    elif 60 <= age_minutes < 360 and token["price_1h_later"] is None:
+        slot = "price_1h_later"
+    if slot is None:
+        return  # Not time yet, already filled, or the window was missed
 
     # Get current price from on-chain
     info = await asyncio.to_thread(web3.get_token_info, token["token_address"])

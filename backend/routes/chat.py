@@ -1,14 +1,15 @@
 """AI advisor chat endpoint."""
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 router = APIRouter(tags=["chat"])
 
 
 class ChatRequest(BaseModel):
-    message: str
-    token_address: str | None = None
+    # Cap prompt size so a runaway client can't push a 10MB body into Gemini.
+    message: str = Field(min_length=1, max_length=2000)
+    token_address: str | None = Field(default=None, max_length=64)
 
 
 class ChatResponse(BaseModel):
