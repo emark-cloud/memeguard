@@ -155,6 +155,48 @@ CREATE TABLE IF NOT EXISTS pending_actions (
     resolved_at TEXT
 );
 
+-- Persistent chat history for the AI advisor.
+-- token_address NULL  => global (dashboard) chat.
+-- token_address != '' => OpportunityDetail chat scoped to that token.
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_address TEXT,
+    role TEXT,
+    content TEXT,
+    created_at TEXT
+);
+
+-- Creator reputation cache. Avoids re-scanning 50k blocks for repeat creators
+-- and folds closed-trade / rug outcomes back into the creator score.
+CREATE TABLE IF NOT EXISTS creator_reputation (
+    creator_address TEXT PRIMARY KEY,
+    launch_count INTEGER DEFAULT 0,
+    avg_24h_outcome_pct REAL,
+    confirmed_rugs INTEGER DEFAULT 0,
+    profitable_closes INTEGER DEFAULT 0,
+    losing_closes INTEGER DEFAULT 0,
+    last_updated TEXT
+);
+
+-- Signal accuracy tracker. Joins entry signals (from tokens.risk_detail) to
+-- eventual outcomes so the risk engine can surface "historical calibration"
+-- summaries in its rationale.
+CREATE TABLE IF NOT EXISTS signal_outcomes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_address TEXT,
+    entry_risk_grade TEXT,
+    entry_risk_percentage REAL,
+    creator_score INTEGER,
+    concentration_score INTEGER,
+    velocity_score INTEGER,
+    liquidity_score INTEGER,
+    outcome_type TEXT,          -- 'trade_closed' | 'avoided_24h'
+    outcome_pnl_pct REAL,
+    outcome_price_change_pct REAL,
+    outcome_confirmed_rug INTEGER,
+    recorded_at TEXT
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_tokens_creator ON tokens (creator_address);
 CREATE INDEX IF NOT EXISTS idx_tokens_risk ON tokens (risk_score);
@@ -167,7 +209,21 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_token ON token_snapshots (token_address
 CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_actions (status);
 CREATE INDEX IF NOT EXISTS idx_pending_token_status ON pending_actions (token_address, status);
 CREATE INDEX IF NOT EXISTS idx_trades_executed ON trades (executed_at);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_token ON chat_messages (token_address, id);
+CREATE INDEX IF NOT EXISTS idx_signal_outcomes_grade ON signal_outcomes (entry_risk_grade, recorded_at);
+CREATE INDEX IF NOT EXISTS idx_signal_outcomes_token ON signal_outcomes (token_address);
+CREATE INDEX IF NOT EXISTS idx_overrides_token ON overrides (token_address, created_at);
 """
+
+
+# Columns added after the initial schema. ALTER TABLE ADD COLUMN is the only
+# migration SQLite supports cleanly, and it has no "IF NOT EXISTS" form, so we
+# check PRAGMA table_info first. Each entry: (table, column, column_definition).
+_COLUMN_MIGRATIONS = [
+    ("pending_actions", "rejection_reason", "TEXT"),
+    ("positions", "last_ai_check_at", "TEXT"),
+    ("positions", "last_ai_pnl_pct", "REAL"),
+]
 
 # Default configuration values
 DEFAULT_CONFIG = {
@@ -191,19 +247,123 @@ def get_db_path() -> str:
     return db_path
 
 
+async def _apply_column_migrations(db):
+    """Add new columns to existing tables (SQLite lacks ADD COLUMN IF NOT EXISTS)."""
+    for table, column, col_def in _COLUMN_MIGRATIONS:
+        cursor = await db.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in await cursor.fetchall()}
+        if column not in existing:
+            await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
+
+
+async def _backfill_signal_outcomes(db):
+    """Populate signal_outcomes retroactively from existing closed positions
+    and resolved avoided rows. Only runs when the table is empty — safe to
+    call on every startup because subsequent runs no-op.
+
+    This gives a fresh deployment immediate "historical calibration" data
+    without waiting for 30 days of operation.
+    """
+    cursor = await db.execute("SELECT COUNT(*) FROM signal_outcomes")
+    if (await cursor.fetchone())[0] > 0:
+        return
+
+    # Closed positions: join tokens.risk_detail (JSON) to read entry signal scores.
+    cursor = await db.execute(
+        """SELECT p.token_address, p.entry_risk_score, p.entry_amount_bnb, p.pnl_bnb,
+                  p.closed_at, t.risk_detail
+           FROM positions p LEFT JOIN tokens t ON p.token_address = t.address
+           WHERE p.status = 'closed'"""
+    )
+    closed = await cursor.fetchall()
+    import json as _json
+    for row in closed:
+        scores = _extract_signal_scores(row["risk_detail"], _json)
+        pnl_pct = None
+        entry = row["entry_amount_bnb"] or 0
+        if entry > 0 and row["pnl_bnb"] is not None:
+            pnl_pct = (row["pnl_bnb"] / entry) * 100
+        await db.execute(
+            """INSERT INTO signal_outcomes (token_address, entry_risk_grade, entry_risk_percentage,
+               creator_score, concentration_score, velocity_score, liquidity_score,
+               outcome_type, outcome_pnl_pct, recorded_at)
+               VALUES (?, ?, NULL, ?, ?, ?, ?, 'trade_closed', ?, ?)""",
+            (
+                row["token_address"], row["entry_risk_score"],
+                scores["creator"], scores["concentration"], scores["velocity"], scores["liquidity"],
+                pnl_pct, row["closed_at"],
+            ),
+        )
+
+    # Resolved avoided rows (24h slot filled): treat as completed outcomes.
+    cursor = await db.execute(
+        """SELECT a.token_address, a.risk_score, a.price_at_flag, a.price_24h_later,
+                  a.confirmed_rug, a.flagged_at, t.risk_detail
+           FROM avoided a LEFT JOIN tokens t ON a.token_address = t.address
+           WHERE a.price_24h_later IS NOT NULL"""
+    )
+    avoided_rows = await cursor.fetchall()
+    for row in avoided_rows:
+        scores = _extract_signal_scores(row["risk_detail"], _json)
+        change_pct = None
+        start = row["price_at_flag"] or 0
+        end = row["price_24h_later"] or 0
+        if start > 0:
+            change_pct = ((end - start) / start) * 100
+        await db.execute(
+            """INSERT INTO signal_outcomes (token_address, entry_risk_grade, entry_risk_percentage,
+               creator_score, concentration_score, velocity_score, liquidity_score,
+               outcome_type, outcome_price_change_pct, outcome_confirmed_rug, recorded_at)
+               VALUES (?, ?, NULL, ?, ?, ?, ?, 'avoided_24h', ?, ?, ?)""",
+            (
+                row["token_address"], row["risk_score"],
+                scores["creator"], scores["concentration"], scores["velocity"], scores["liquidity"],
+                change_pct, int(row["confirmed_rug"] or 0), row["flagged_at"],
+            ),
+        )
+
+
+def _extract_signal_scores(risk_detail_json, json_mod) -> dict:
+    """Pull the four tracked signal scores out of a tokens.risk_detail JSON blob."""
+    out: dict[str, int | None] = {"creator": None, "concentration": None, "velocity": None, "liquidity": None}
+    if not risk_detail_json:
+        return out
+    try:
+        detail = json_mod.loads(risk_detail_json)
+        sig_map = {
+            "creator": "creator_history",
+            "concentration": "holder_concentration",
+            "velocity": "bonding_velocity",
+            "liquidity": "liquidity",
+        }
+        for key, signal_name in sig_map.items():
+            sig = detail.get(signal_name) if isinstance(detail, dict) else None
+            if isinstance(sig, dict) and sig.get("score") is not None:
+                try:
+                    out[key] = int(sig["score"])
+                except (TypeError, ValueError):
+                    pass
+    except (ValueError, TypeError):
+        pass
+    return out
+
+
 async def init_db():
     """Initialize the database with schema and default config."""
     async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
         # WAL mode allows concurrent readers + one writer without "database is locked"
         await db.execute("PRAGMA journal_mode=WAL")
         await db.execute("PRAGMA busy_timeout=5000")
         await db.executescript(SCHEMA)
+        await _apply_column_migrations(db)
         # Insert default config values if not present
         for key, value in DEFAULT_CONFIG.items():
             await db.execute(
                 "INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)",
                 (key, value),
             )
+        await _backfill_signal_outcomes(db)
         await db.commit()
 
 
