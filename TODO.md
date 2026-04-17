@@ -111,7 +111,7 @@
 ### Verify Phase 3
 - [x] **Playwright UI pass:** dashboard feed, token detail radar + 8 signals + AMBER deep-analysis narrative, avoided stats, settings (8004 card, persona, approval, exit strategy, budget, watchlist), AI chat panel (graceful Gemini-503 fallback) — all render correctly
 - [x] **Fixed during verification:** event-loop blocking on sync Web3 calls (commit `3476eb4`); SQLite `database is locked` under concurrent scoring + ghost-token AMBER mis-grading (commit `295bd0f`) — avoided tracker now auto-populates (39+ tokens flagged live)
-- [ ] **Wallet-gated demo flow:** 8004 register tx + trade approve-sign — requires MetaMask in browser, not automatable via Playwright
+- [x] **Wallet-gated demo flow:** 8004 register tx (agent wallet `0xECf5…Bb25` registered on BSC mainnet) + trade approve-sign (position_id 4, 13,069 ORDI, entry 0.0001 BNB, tx `0x8a9e876852b6368fbc1a0bb027eddf1b2043f9882af469653112314c2771dbdb`)
 - [ ] **Community voting appeal:** deployed, polished, screenshot-worthy
 
 ## Phase 4: Non-Custodial Session Keys (Roadmap — post-hackathon)

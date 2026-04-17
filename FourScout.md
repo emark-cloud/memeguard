@@ -702,7 +702,7 @@ CREATE INDEX idx_activity_token ON activity (token_address);
 
 **Status:** All pages functional. Scanner discovering and scoring real Four.meme tokens. 8-signal risk engine producing GREEN/AMBER/RED grades with detailed per-signal breakdowns.
 
-### Phase 2 — The Brain (IN PROGRESS)
+### Phase 2 — The Brain (COMPLETE)
 
 **Goal:** End-to-end trade loop (buy + sell) with AI depth, position tracking, and real-time alerting.
 
@@ -722,11 +722,11 @@ CREATE INDEX idx_activity_token ON activity (token_address);
 - [x] End-to-end buy loop: verified with 0.0001 BNB trade on-chain
 
 #### Sell Flow & Position Management
-- [ ] Complete sell executor: sell quote, slippage protection, position closure, trade recording, PnL fields
-- [ ] Configurable take-profit/stop-loss thresholds (Settings UI, replaces hardcoded 100%/-50%)
-- [ ] Auto-sell mode: automatic sell execution at thresholds without approval
-- [ ] AI-driven position monitoring: Gemini exit analysis every 5 min with drift detection
-- [ ] End-to-end sell loop: position tracker proposes → approve/auto-sell → execute → position closed
+- [x] Complete sell executor: sell quote, slippage protection, position closure, trade recording, PnL fields
+- [x] Configurable take-profit/stop-loss thresholds (Settings UI, replaces hardcoded 100%/-50%)
+- [x] Auto-sell mode: automatic sell execution at thresholds without approval
+- [x] AI-driven position monitoring: Gemini exit analysis every 5 min with drift detection (capped at 3 LLM calls/cycle)
+- [x] End-to-end sell loop: position tracker proposes → approve/auto-sell → execute → position closed (verified with 0.0001 BNB, tx `0x3a7f…6e9f`)
 
 #### AI Depth (Competitive Edge)
 - [x] Interactive AI chat advisor: `POST /api/chat` endpoint + frontend ChatPanel on Dashboard/OpportunityDetail
@@ -736,33 +736,40 @@ CREATE INDEX idx_activity_token ON activity (token_address);
 #### Real-Time Alerting
 - [x] `action_proposed` — trade opportunity pending approval
 - [x] `trade_executed` — buy/sell completed with tx details
-- [x] `position_update` — PnL change (periodic, from position tracker)
+- [x] `position_update` — PnL change (periodic, from position tracker; toast filtered to milestones ≥50%, ≥100%, ≤-40%)
 - [x] `risk_alert` — token grade changed on rescore
-- [ ] Toast notification system: real-time visual alerts for all WebSocket events
-- [ ] `avoided_update` — "dodged a bullet" notification (deferred to Phase 3)
+- [x] Toast notification system: real-time visual alerts for all WebSocket events (max 5 visible, auto-dismiss 5s)
+- [x] `avoided_update` — "dodged a bullet" notification (shipped with Phase 3 avoided tracker)
 
 **End of Phase 2 deliverable:** Full trade loop (buy + sell) works with AI advisor and AI-driven position monitoring. Agent finds token, scores it, synthesizes a narrative, proposes trade, user can ask questions via chat, approves, trade executes, position tracked with AI exit analysis. Sells execute with configurable thresholds and optional auto-sell. Dashboard shows real-time toast notifications for all important events.
 
-### Phase 3 — Polish & Demo Features
+### Phase 3 — Polish & Demo Features (MOSTLY COMPLETE)
 
 **Goal:** Demo-ready with killer differentiators and visual polish. Ordered by judging impact.
 
 #### High Priority (Differentiators)
-- [ ] ERC-8004 agent identity registration: `agent_identity.py` service + Settings UI button + on-chain tx verification (low effort, high Four.meme integration signal)
-- [ ] "What I Avoided" background job: check red-flagged token prices at 1h/6h/24h, confirmed rug detection, savings tally
-- [ ] Risk visualization: radar chart or stacked signal bars for 8-signal breakdown (recharts/Chart.js)
-- [ ] Deployment: Frontend → Vercel, Backend Dockerfile (Python + Node.js) → Railway
+- [x] ERC-8004 agent identity registration: `agent_identity.py` service + Settings UI card + on-chain tx verification (verified: agent wallet registered on BSC mainnet)
+- [x] "What I Avoided" background job: checks red-flagged token prices at 1h/6h/24h, confirmed rug detection, savings tally (39+ tokens flagged live)
+- [x] Risk visualization: recharts `RadarChart` on OpportunityDetail showing 8-signal breakdown
+- [x] Backend Docker self-host (`Dockerfile` + `docker-compose.yml` + `.dockerignore`, SQLite volume persistence verified)
+- [ ] Deployment: provision Railway/Render (backend) + Vercel (frontend) for a live URL
 
 #### Medium Priority (Completeness)
-- [ ] Behavioral nudge: track overrides, show outcome summary on Dashboard
-- [ ] Watchlist management UI on Settings page
-- [ ] Volume consistency signal: replace stub with real implementation
+- [x] Behavioral nudge: tracks overrides (approve RED / reject GREEN), shows outcome summary on Dashboard
+- [x] Watchlist management UI on Settings page (creator + token addresses, add/remove)
+- [x] Volume consistency signal: real implementation via on-chain Transfer event analysis (wash-trading detection)
+
+#### Verification
+- [x] Playwright UI pass: dashboard, opportunity detail (radar + 8 signals + AMBER deep-analysis narrative), avoided stats, settings (8004 card, persona, approval, exit strategy, budget, watchlist), AI chat panel — all render correctly
+- [x] Fixed during verification: event-loop blocking on sync Web3 calls (`3476eb4`); SQLite `database is locked` + ghost-token AMBER mis-grading (`295bd0f`)
+- [x] Wallet-gated smoke test: ERC-8004 register tx + buy approve-sign via API → real on-chain trade recorded (position_id 4, 13,069 ORDI tokens, tx `0x8a9e…dbdb`)
 
 #### Demo & Submission
-- [ ] Visual polish: animations, hover effects, pulsing status indicator, responsive layout
-- [ ] Demo seed script for pre-populated avoided rugs
-- [ ] README with architecture diagram, setup instructions, screenshots
+- [x] Visual polish: card fade-in, hover glow, pulsing scanner dot, responsive grid
+- [x] README.md with architecture diagram, setup instructions, deployment section, security model
+- [ ] Demo seed script for pre-populated avoided rugs (deferred — avoided tracker accumulates naturally over 24h)
 - [ ] Demo video recording (3-5 min, see demo script below)
+- [ ] DoraHacks BUIDL submission (GitHub repo + demo video link)
 
 ---
 
@@ -900,7 +907,7 @@ meme-guard/
 │   ├── package.json
 │   └── vite.config.js             # React + Tailwind plugins, /api and /ws proxy to backend
 ├── fourmeme-cli/                  # Local npm install of @four-meme/four-meme-ai (gitignored)
-├── Memeguard.md                   # This file — full MVP specification
+├── FourScout.md                   # This file — full MVP specification
 ├── CLAUDE.md                      # Project reference for development
 ├── .env.example
 └── .gitignore
@@ -946,6 +953,147 @@ If Phase 3 gets cut, the minimum viable submission is:
 - **ERC-8004 agent registration** (Phase 3 — low effort, high Four.meme signal)
 
 That alone is a complete agentic product with AI depth, on-chain action, and deep Four.meme integration. The "What I Avoided" log is the highest-impact Phase 3 item — prioritize it over visual polish. The AI advisor and ERC-8004 are the two features most likely to differentiate from other submissions.
+
+---
+
+## 18. Roadmap: Non-Custodial Session Keys
+
+**Status:** Design only. Not implemented in the MVP. This section describes how FourScout evolves from a single-tenant, self-hosted tool into a hosted product without ever custodying user funds.
+
+### The Problem with the Current Model
+
+The MVP stores one `PRIVATE_KEY` in `backend/.env`. The backend reads it, hands it to the Four.meme CLI subprocess, and the CLI signs every transaction (buy, sell, ERC-8004 register). This is correct for a **self-hosted single-user** deployment — the user owns the key, the server, and the risk.
+
+It is wrong for a hosted SaaS. Two naive alternatives both fail:
+
+- **Custody everyone's keys.** Server generates a keypair per user, encrypts it at rest. One breach drains every user's wallet. Makes the operator a regulated money transmitter in most jurisdictions.
+- **Prompt-to-sign every tx in MetaMask.** Breaks the autonomous loop. The position tracker can't auto-sell at 3 AM if it needs a signature prompt.
+
+The resolution is **delegated signing with on-chain-enforced limits** — commonly called session keys. The user signs *once* to grant the server narrow authority. The server signs routine trades with that authority. The smart contract rejects anything outside the grant. The user revokes at any time.
+
+### Target Stack
+
+| Component | Choice | Why |
+|-----------|--------|-----|
+| Smart account | **ZeroDev Kernel v3** | Most mature session-key module, modular validators, first-class BSC support. |
+| Session-key module | **@zerodev/permissions** | Composable policies (call whitelist, spend limit, rate limit, expiry). |
+| Bundler | **Pimlico** (BSC mainnet, chain 56) | Reliable, reasonable pricing, works with Kernel out of the box. |
+| EntryPoint | **v0.7** (canonical BSC address) | Current ERC-4337 spec. |
+| Paymaster | **None** (user pre-funds Kernel in BNB) | Simpler; memecoin agent doesn't need gasless UX. |
+
+### Onboarding Flow (User-Facing, One-Time)
+
+```
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│ Connect EOA  │ → │ Compute      │ → │ Fund Kernel  │ → │ Sign session │
+│ (MetaMask)   │   │ Kernel addr  │   │ with BNB     │   │ key grant    │
+└──────────────┘   │ (counterfact)│   │ (MetaMask)   │   └──────┬───────┘
+                   └──────────────┘   └──────────────┘          │
+                                                                ▼
+                                                         ┌──────────────┐
+                                                         │ Backend      │
+                                                         │ stores key + │
+                                                         │ policy hash  │
+                                                         └──────────────┘
+```
+
+1. User connects their EOA (already wired today via wagmi).
+2. Frontend computes counterfactual Kernel address — no gas cost until first use.
+3. User sends BNB from MetaMask/CEX to the Kernel address. This **is** the agent wallet.
+4. Frontend generates an ephemeral session-key keypair in the browser.
+5. Frontend asks the user to sign a session-key grant in MetaMask with constraints:
+
+   | Policy | Enforces |
+   |--------|----------|
+   | `toCallPolicy` | Only `TokenManager2`, `TokenManagerHelper3`, `BRC8004 Identity Registry` + specific selectors (`buyTokenAMAP`, `sellToken`, `register`). |
+   | `toSpendingLimitPolicy` | Total BNB over session ≤ `max_per_day_bnb` × session days. |
+   | `toRateLimitPolicy` | Max N userOps per hour — caps runaway-loop blast radius. |
+   | `toTimestampPolicy` | 7-day expiry. User must re-grant to extend. |
+
+6. Frontend posts `{smart_account_address, session_key_private, policy_hash, expires_at}` to the backend. The private key is encrypted at rest (libsodium sealed box or KMS envelope).
+
+### Per-Trade Flow (Fully Autonomous)
+
+No user interaction. Same decision pipeline as today — the only swap is the signing mechanism.
+
+```
+scanner → risk engine → persona → approval_gate → pending_action
+                                                        │
+                                                        ▼
+                                              (auto or user approve)
+                                                        │
+                                                        ▼
+                    ┌───────────────────────────────────┴────────────────────────────┐
+                    │                                                                │
+                    ▼                                                                ▼
+          Today (MVP): CLI subprocess                              Future: session-signer sidecar
+          ─ fourmeme buy <token> funds <wei>                       ─ Build userOp (sender=Kernel)
+          ─ CLI signs with PRIVATE_KEY                             ─ Session key signs
+          ─ Broadcast via BSC RPC                                  ─ Submit via Pimlico bundler
+                                                                   ─ Kernel validates policies on-chain
+                                                                   ─ Execute → BNB paid from Kernel
+```
+
+### Python ↔ TypeScript Bridge
+
+ZeroDev's SDK is TypeScript-only. The backend is Python. The cleanest integration is a small Node sidecar alongside `fourmeme-cli/`:
+
+```
+session-signer/
+├── package.json               # @zerodev/sdk, @zerodev/permissions, viem, express
+├── src/
+│   ├── index.ts               # POST /userop — build, sign, submit, return txHash
+│   ├── policies.ts            # Rebuild policy object from stored policy_hash
+│   └── kernel.ts              # Kernel client factory
+└── tsconfig.json
+```
+
+The Python backend calls `POST http://localhost:3001/userop` via `httpx` with the same shape it already uses for CLI subprocess results. This mirrors the existing CLI-subprocess pattern — just a different port.
+
+### What Stays the Same
+
+Every policy layer above the signing boundary is unchanged:
+
+- Persona rules (Conservative / Momentum / Sniper)
+- 4 approval modes (approve each / per session / budget threshold / monitor only)
+- Budget caps (max per trade, max per day, max active positions, min liquidity, max slippage, cooldown)
+- Position tracker + AI exit analysis + auto-sell flag
+- `fourmeme_cli.py` for read-only commands: `quote-buy`, `quote-sell`, `tax-info`, `events`, `token-rankings`, `token-info`
+
+Session keys are a **signing mechanism swap**, not a policy rewrite. If the MVP rejects a trade, so does this. The delta is: even if the server is fully compromised, the smart contract rejects anything the user didn't authorize.
+
+### Revocation
+
+Two paths:
+
+1. **Active revocation.** Settings page → "Revoke session" → user signs `disableValidator` in MetaMask → Kernel refuses future userOps signed by this key.
+2. **Passive expiry.** Session key's `toTimestampPolicy` hits its deadline → Kernel starts rejecting. Backend detects via bundler error and prompts user to re-grant.
+
+### Trade-offs, Honest
+
+| Concern | Reality |
+|---------|---------|
+| Gas cost | userOp ~20–30% more gas than EOA tx. Fine for memecoin timeframes. |
+| Latency | Bundler adds ~2–4s vs direct RPC broadcast. Scanner + exit checks already tolerate this. |
+| BSC infra maturity | Pimlico and ZeroDev both support BSC mainnet, but AA tooling is younger on BSC than on Ethereum/Base. Validate with testnet first. |
+| Kernel deployment cost | First userOp deploys the Kernel (~$1 in BNB). Acceptable one-time onboarding cost. |
+| Complexity | Significant new surface (smart-account UX, session grants, revocation, key encryption-at-rest). Post-hackathon scope. |
+
+### What This Unlocks
+
+- **Hosted multi-tenant deployment** without custodial risk or regulatory weight.
+- **User-visible auditability.** Every trade is a userOp signed by a session key with a revocable, time-bound, on-chain-enforced policy.
+- **Composability with future AA features:** gas sponsorship, fee abstraction (pay in USDT), batched multi-trade ops, social recovery.
+- **A credible pitch beyond the hackathon.** "Non-custodial AI trading agent with cryptographically bounded delegation" is a real product shape.
+
+### Open Questions
+
+- Policy upgrade path: if the user raises `max_per_day_bnb` in Settings, does that require a new session-key grant (new signature prompt) or can we layer per-session sub-policies?
+- Session-signer sidecar deployment: separate container in `docker-compose.yml`, or merged into the backend container as a supervised process?
+- Encryption-at-rest key: environment variable for self-hosted; KMS for eventual hosted deploy.
+- Monitoring: userOp failures (bundler reverts, policy rejections) need distinct telemetry from today's CLI subprocess errors.
+
+These are deliberately left unresolved. They become real decisions when implementation starts.
 
 ---
 
