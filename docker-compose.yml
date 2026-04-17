@@ -1,0 +1,14 @@
+services:
+  backend:
+    build: .
+    image: fourscout-backend:latest
+    container_name: fourscout-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_PATH: /app/data/fourscout.db
+    volumes:
+      - ./data:/app/data

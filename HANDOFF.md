@@ -1,6 +1,6 @@
 # FourScout — Project Handoff Document
 
-> Last updated: 2026-04-15
+> Last updated: 2026-04-17
 > Purpose: Everything a new Claude instance needs to continue building this project.
 
 ---
@@ -36,7 +36,8 @@ Built for the **Four.Meme AI Sprint hackathon** on DoraHacks ($50K prize pool).
 | On-chain reads | Web3.py (direct contract calls for risk scoring) |
 | Trading | Four.meme CLI (`@four-meme/four-meme-ai`) via subprocess |
 | Wallet | wagmi + viem (frontend BSC wallet connection) |
-| Deploy target | Vercel (frontend) + Railway (backend) |
+| Deploy target | Vercel (frontend) + Railway / Docker self-host (backend) |
+| Future AA | ZeroDev Kernel v3 + `@zerodev/permissions` session keys + Pimlico bundler (see FourScout.md §18) |
 
 ---
 
@@ -111,7 +112,7 @@ meme-guard/
 │   ├── package.json
 │   └── vite.config.js
 ├── fourmeme-cli/                # Local npm install of @four-meme/four-meme-ai
-├── Memeguard.md                 # Full MVP specification (features, flows, architecture, demo script)
+├── FourScout.md                 # Full MVP specification (features, flows, architecture, demo script, §18 session-key roadmap)
 ├── CLAUDE.md                    # Claude Code project instructions
 ├── TODO.md                      # Build checklist with phase status
 ├── COMPETITIVE_ANALYSIS.md      # BuildersClaw benchmark analysis
@@ -122,7 +123,11 @@ meme-guard/
 
 ---
 
-## 6. Current Status — Phase 2 (The Brain)
+## 6. Current Status — Phase 3 (Polish & Demo)
+
+**Spec rename:** `Memeguard.md` is now `FourScout.md`. A new §18 "Roadmap: Non-Custodial Session Keys" documents the post-hackathon evolution from single-tenant self-hosted (one `PRIVATE_KEY`) to multi-tenant ERC-4337 session keys. Phase 4 in `TODO.md` tracks that scope as design-only — no implementation in the current branch.
+
+**Phase 2 verified, Phase 3 largely complete.** Avoided tracker is populating live (39+ red-flagged tokens, price history filling naturally over 1h/6h/24h). All UI features Playwright-verified except wallet-gated flows (8004 register tx + trade approve-sign — require MetaMask in browser). Docker self-host artifacts added.
 
 ### COMPLETE (committed at `c23acbf`)
 
@@ -162,12 +167,14 @@ meme-guard/
 3. Test exit strategy settings: change thresholds in Settings, verify position_tracker uses them
 4. Test AI monitoring: with Gemini key, hold a position for 5+ minutes, check backend logs for AI analysis
 
-**Phase 3 — Polish & Demo Features (see TODO.md):**
-- ERC-8004 agent identity registration (Settings UI button + on-chain tx)
-- "What I Avoided" background job (check red-flagged tokens at 1h/6h/24h, confirmed rug detection)
-- Risk visualization (radar chart for 8-signal breakdown)
-- Deployment (Vercel + Railway)
-- Demo seed script, visual polish, README, demo video
+**Phase 3 — Polish & Demo Features (largely complete; see TODO.md):**
+- [x] ERC-8004 agent identity registration, "What I Avoided" tracker, risk radar chart, behavioral nudge, watchlist UI, real volume signal, visual polish, README
+- [ ] Deployment (Docker artifacts added; Vercel + Railway/Render still to provision)
+- [ ] Wallet-gated smoke test (8004 register + trade approve via MetaMask)
+- [ ] Demo video + DoraHacks BUIDL submission
+
+**Phase 4 — Non-Custodial Session Keys (roadmap only, not started):**
+- Design documented in `FourScout.md` §18. Stack: ZeroDev Kernel v3 + `@zerodev/permissions` + Pimlico on BSC. Introduces a Node.js `session-signer/` sidecar alongside `fourmeme-cli/`. Backend would swap CLI-subprocess signing for bundler userOps while keeping read-only CLI commands unchanged. All persona rules, approval modes, and budget caps preserved — session keys are a signing mechanism swap, not a policy rewrite.
 
 ---
 
@@ -342,7 +349,7 @@ d5c782b Phase 2: Brain — auto-propose pipeline, trade execution, AI advisor, a
 For a new Claude instance, start with these:
 1. `CLAUDE.md` — project instructions, architecture, design principles
 2. `TODO.md` — what's done and what's next
-3. `Memeguard.md` — full MVP spec (features, flows, demo script)
+3. `FourScout.md` — full MVP spec (features, flows, demo script); §18 documents the non-custodial session-key roadmap
 4. `backend/services/risk_engine.py` — the core scoring + auto-propose pipeline
 5. `backend/services/executor.py` — trade execution (buy + sell)
 6. `backend/services/position_tracker.py` — position monitoring + AI exit analysis

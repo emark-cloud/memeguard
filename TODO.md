@@ -94,7 +94,7 @@
 - [x] ERC-8004 agent identity registration (`agent_identity.py` + Settings UI section + on-chain verification)
 - [x] "What I Avoided" background job: check red-flagged token prices at 1h/6h/24h, confirmed rug detection, `avoided_update` toast
 - [x] Risk visualization: radar chart for 8-signal breakdown (recharts RadarChart on OpportunityDetail)
-- [ ] Deployment: Frontend → Vercel, Backend Dockerfile (Python + Node.js) → Railway
+- [ ] Deployment: Backend `Dockerfile` + `docker-compose.yml` (Python + Node.js for Four.meme CLI, SQLite volume mount) → Railway / Render / self-host; Frontend → Vercel (`VITE_API_BASE` → backend URL). See README "Deployment" section.
 
 ### Medium Priority (Completeness)
 - [x] Behavioral nudge: track overrides (approve risky / reject safe), show outcome summary on Dashboard
@@ -105,7 +105,7 @@
 - [ ] Demo seed script (pre-populate avoided rugs for compelling demo)
 - [x] Visual polish: card fade-in animations, hover glow, pulsing scanner dot, responsive grid
 - [x] README.md (architecture diagram, feature list, setup instructions)
-- [ ] Demo video recording (3-5 min, follow script in Memeguard.md Section 12)
+- [ ] Demo video recording (3-5 min, follow script in FourScout.md Section 12)
 - [ ] DoraHacks BUIDL submission (GitHub repo + demo video link)
 
 ### Verify Phase 3
@@ -113,3 +113,34 @@
 - [x] **Fixed during verification:** event-loop blocking on sync Web3 calls (commit `3476eb4`); SQLite `database is locked` under concurrent scoring + ghost-token AMBER mis-grading (commit `295bd0f`) — avoided tracker now auto-populates (39+ tokens flagged live)
 - [ ] **Wallet-gated demo flow:** 8004 register tx + trade approve-sign — requires MetaMask in browser, not automatable via Playwright
 - [ ] **Community voting appeal:** deployed, polished, screenshot-worthy
+
+## Phase 4: Non-Custodial Session Keys (Roadmap — post-hackathon)
+**Goal:** Evolve from single-tenant self-hosted (one `PRIVATE_KEY` per deployment) to hosted multi-tenant with cryptographically bounded delegation. Design documented in `FourScout.md` §18.
+
+### Stack
+- [ ] ZeroDev Kernel v3 smart account on BSC mainnet (chain 56), EntryPoint v0.7
+- [ ] `@zerodev/permissions` session-key module with composable policies: `toCallPolicy` (whitelist Four.meme contracts + selectors), `toSpendingLimitPolicy` (max BNB over session), `toRateLimitPolicy` (userOps/hour cap), `toTimestampPolicy` (7-day expiry)
+- [ ] Pimlico bundler integration (BSC mainnet)
+
+### Backend
+- [ ] `session-signer/` Node.js sidecar (TypeScript) — `POST /userop` endpoint that builds, signs with session key, submits via Pimlico, returns tx hash
+- [ ] Python backend refactor: replace `fourmeme buy/sell/8004-register` signing calls with `httpx` calls to session-signer. `fourmeme_cli.py` keeps all read-only commands (quote-buy, quote-sell, tax-info, events, rankings, token-info).
+- [ ] Session key storage: encrypted-at-rest in DB (libsodium sealed box for self-host; KMS envelope for hosted)
+- [ ] Config schema: add `smart_account_address`, `session_key_policy_hash`, `session_expires_at`; deprecate direct `PRIVATE_KEY` usage for signing
+
+### Frontend (multi-step onboarding wizard)
+- [ ] Connect EOA → compute counterfactual Kernel address → show fund-this-address instruction
+- [ ] Generate ephemeral session-key keypair in-browser
+- [ ] Prompt MetaMask to sign session-key grant with policy constraints pulled from current Budget Caps config
+- [ ] POST session key + policy metadata to backend
+- [ ] Settings page: session status card (expiry, remaining cap, active validator) + Revoke button (signs `disableValidator` via MetaMask)
+
+### Migration & Ops
+- [ ] Dual-mode backend: detect `PRIVATE_KEY` fallback for self-host vs. session-key mode for hosted; swap executor at runtime
+- [ ] userOp failure telemetry: distinguish bundler reverts, policy rejections, session expiry from generic tx errors
+- [ ] Docs: migration guide for self-hosted users (optional path; `PRIVATE_KEY` mode remains supported)
+
+### Open Questions (resolve during implementation)
+- [ ] Policy upgrade UX: does raising `max_per_day_bnb` require a new grant signature, or can the backend layer sub-policies?
+- [ ] Session-signer deployment: separate Docker service vs. supervised process inside backend container?
+- [ ] Paymaster use: does gasless onboarding (first userOp sponsored) add enough value to justify the integration?

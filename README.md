@@ -120,6 +120,50 @@ cd fourmeme-cli
 npm install
 ```
 
+## Deployment
+
+FourScout ships as a **self-hosted single-tenant** application. Each user runs their own instance with their own agent wallet. This is an explicit design choice — see the Security Model section below and [FourScout.md §18](./FourScout.md#18-roadmap-non-custodial-session-keys) for the non-custodial multi-tenant roadmap.
+
+### Backend — Docker (recommended for self-host)
+
+```bash
+cp .env.example .env   # fill in PRIVATE_KEY, GEMINI_API_KEY, BSC_RPC_URL
+docker compose up -d
+```
+
+The backend listens on port 8000. The SQLite database persists to `./data/fourscout.db` via a volume mount, so restarts and image rebuilds preserve your history, positions, and avoided-token log.
+
+### Backend — Railway / Render
+
+The Dockerfile is deploy-platform-agnostic. On Railway:
+
+1. New project → Deploy from GitHub repo.
+2. Set env vars from `.env.example`.
+3. Attach a persistent volume mounted at `/app/data` for the SQLite file.
+
+### Frontend — Vercel
+
+```bash
+cd frontend
+vercel --prod
+```
+
+Set `VITE_API_BASE` to your deployed backend URL in the Vercel dashboard. The frontend is a static SPA and does not need any server-side runtime.
+
+## Security Model
+
+FourScout is **single-tenant by design**. Each deployment uses one `PRIVATE_KEY` in `.env` that signs every trade via the Four.meme CLI subprocess. That private key is the agent wallet — it should be a **dedicated wallet**, never your main holdings wallet, and it should only hold the amount of BNB you're comfortable letting the agent trade with.
+
+Why this model:
+
+- **No custody risk.** We never hold your keys on a shared server. If you self-host, only you hold them.
+- **No regulatory surface.** Self-hosting keeps the operator out of money-transmitter territory.
+- **Honest scope for a hackathon MVP.** Shipping a working agent matters more than a multi-user backend.
+
+The next step toward a hosted, multi-user product is **non-custodial session keys** via ERC-4337 account abstraction (ZeroDev Kernel + Pimlico bundler on BSC). That architecture is documented in full at [FourScout.md §18](./FourScout.md#18-roadmap-non-custodial-session-keys). It is design-only today — not built into the MVP.
+
+**Budget caps are enforced server-side regardless of deployment model** — max per trade, max per day, max active positions, slippage, cooldown. The `PRIVATE_KEY` can only spend what the rest of the stack authorizes.
+
 ## Project Structure
 
 ```

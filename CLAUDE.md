@@ -24,7 +24,8 @@ Expert review (70%) + Community voting (30%):
 | On-chain reads | Web3.py (direct contract calls for risk scoring) |
 | Trading | Four.meme CLI (`@four-meme/four-meme-ai`) via subprocess |
 | Wallet | wagmi + viem (frontend BSC wallet connection) |
-| Deploy | Vercel (frontend) + Railway (backend) |
+| Deploy | Vercel (frontend) + Railway / Docker self-host (backend) |
+| Future AA | ZeroDev Kernel v3 smart account + `@zerodev/permissions` session keys + Pimlico bundler on BSC (see FourScout.md §18) |
 
 ## Architecture
 
@@ -165,7 +166,7 @@ meme-guard/
 │   ├── package.json
 │   └── vite.config.js
 ├── fourmeme-cli/            # Local npm install of @four-meme/four-meme-ai
-├── Memeguard.md             # Full MVP specification
+├── FourScout.md             # Full MVP specification (includes §18 non-custodial session-key roadmap)
 ├── CLAUDE.md                # This file
 ├── .env.example
 └── .gitignore
@@ -177,7 +178,8 @@ meme-guard/
 # BSC
 BSC_RPC_URL=https://bsc-dataseed1.binance.org
 
-# Four.meme CLI
+# Four.meme CLI — single-tenant self-hosted use only.
+# Non-custodial session-key roadmap documented in FourScout.md §18.
 PRIVATE_KEY=                  # Hex private key for agent wallet (never main wallet)
 
 # LLM
@@ -224,3 +226,4 @@ cd fourmeme-cli && npm install @four-meme/four-meme-ai
 6. **Provider-agnostic LLM** — Abstraction layer supports Gemini now, Anthropic later.
 7. **Complete pipelines** — Every user flow must work end-to-end (discover → score → propose → approve → execute → track → exit). No dead ends.
 8. **Deterministic-first monitoring** — Position exit checks use numeric thresholds every 60s (cheap, fast). AI analysis runs selectively every 5 min only when drift triggers fire (approaching thresholds, stale positions). Max 3 LLM calls per cycle to respect Gemini free-tier rate limits.
+9. **Single-tenant by design** — The MVP ships with one `PRIVATE_KEY` per deployment (self-hosted Docker or local dev). Non-custodial session keys via ERC-4337 are the productization path, not the MVP. See FourScout.md §18 for the target architecture.
