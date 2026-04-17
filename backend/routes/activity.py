@@ -1,5 +1,7 @@
 """Activity feed and override stats endpoints."""
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Query
 from database import get_db
 
@@ -65,6 +67,37 @@ async def override_stats():
             "approved_risky": approved_risky,
             "rejected_safe": rejected_safe,
             "overrides_rugged": overrides_rugged,
+        }
+    finally:
+        await db.close()
+
+
+@router.get("/overrides/rejection_reasons")
+async def rejection_reasons(days: int = Query(7, ge=1, le=90), limit: int = Query(3, ge=1, le=20)):
+    """Return the most common user-supplied rejection reasons in the last N days.
+
+    Reasons are free-text, so we collapse on exact-match trimmed strings. Good
+    enough for a "top 3 last week" nudge — not trying to cluster semantics.
+    """
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT rejection_reason AS reason, COUNT(*) AS cnt
+               FROM pending_actions
+               WHERE status = 'rejected'
+                 AND rejection_reason IS NOT NULL
+                 AND TRIM(rejection_reason) != ''
+                 AND resolved_at >= ?
+               GROUP BY TRIM(rejection_reason)
+               ORDER BY cnt DESC
+               LIMIT ?""",
+            (since, limit),
+        )
+        rows = await cursor.fetchall()
+        return {
+            "window_days": days,
+            "top": [{"reason": r["reason"], "count": r["cnt"]} for r in rows],
         }
     finally:
         await db.close()

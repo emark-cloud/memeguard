@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import TokenCard from '../components/TokenCard'
 import BudgetBar from '../components/BudgetBar'
-import { getTokens, getConfig, getPositions, getAvoidedStats, getDailyTradeStats, getOverrideStats } from '../services/api'
+import { getTokens, getConfig, getPositions, getAvoidedStats, getDailyTradeStats, getOverrideStats, getRejectionReasons } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 
 const PERSONA_LABELS = {
@@ -15,19 +15,21 @@ export default function Dashboard() {
   const [config, setConfig] = useState({})
   const [stats, setStats] = useState({ trades: 0, positions: 0, avoided: 0, savings: 0, spent: 0 })
   const [overrides, setOverrides] = useState(null)
+  const [rejectionReasons, setRejectionReasons] = useState([])
   const [loading, setLoading] = useState(true)
   const { isConnected: wsConnected } = useWebSocket()
 
   useEffect(() => {
     async function load() {
       try {
-        const [tokenData, configData, posData, avoidedData, dailyData, overrideData] = await Promise.all([
+        const [tokenData, configData, posData, avoidedData, dailyData, overrideData, reasonsData] = await Promise.all([
           getTokens({ limit: 30 }).catch(() => []),
           getConfig().catch(() => ({})),
           getPositions('active').catch(() => []),
           getAvoidedStats().catch(() => ({ confirmed_rugs: 0, estimated_savings_bnb: 0 })),
           getDailyTradeStats().catch(() => ({ spent_today_bnb: 0, trades_today: 0 })),
           getOverrideStats().catch(() => null),
+          getRejectionReasons(7, 3).catch(() => ({ top: [] })),
         ])
         setTokens(tokenData)
         setConfig(configData)
@@ -39,6 +41,7 @@ export default function Dashboard() {
           spent: dailyData.spent_today_bnb,
         })
         if (overrideData) setOverrides(overrideData)
+        setRejectionReasons(reasonsData?.top || [])
       } catch (e) {
         console.error('Dashboard load error:', e)
       } finally {
@@ -94,26 +97,42 @@ export default function Dashboard() {
       </div>
 
       {/* Behavioral nudge */}
-      {overrides && overrides.total_overrides > 0 && (
+      {((overrides && overrides.total_overrides > 0) || rejectionReasons.length > 0) && (
         <div className="mb-6 bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)]">
           <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-2">Override Summary</h3>
-          <div className="flex flex-wrap gap-4 text-sm">
-            {overrides.approved_risky > 0 && (
-              <span className="text-[#F0B90B]">
-                {overrides.approved_risky} risky trade{overrides.approved_risky !== 1 ? 's' : ''} approved
-              </span>
-            )}
-            {overrides.rejected_safe > 0 && (
-              <span className="text-[var(--text-secondary)]">
-                {overrides.rejected_safe} safe trade{overrides.rejected_safe !== 1 ? 's' : ''} rejected
-              </span>
-            )}
-            {overrides.overrides_rugged > 0 && (
-              <span className="text-[#F6465D]">
-                {overrides.overrides_rugged} overridden token{overrides.overrides_rugged !== 1 ? 's' : ''} rugged
-              </span>
-            )}
-          </div>
+          {overrides && overrides.total_overrides > 0 && (
+            <div className="flex flex-wrap gap-4 text-sm">
+              {overrides.approved_risky > 0 && (
+                <span className="text-[#F0B90B]">
+                  {overrides.approved_risky} risky trade{overrides.approved_risky !== 1 ? 's' : ''} approved
+                </span>
+              )}
+              {overrides.rejected_safe > 0 && (
+                <span className="text-[var(--text-secondary)]">
+                  {overrides.rejected_safe} safe trade{overrides.rejected_safe !== 1 ? 's' : ''} rejected
+                </span>
+              )}
+              {overrides.overrides_rugged > 0 && (
+                <span className="text-[#F6465D]">
+                  {overrides.overrides_rugged} overridden token{overrides.overrides_rugged !== 1 ? 's' : ''} rugged
+                </span>
+              )}
+            </div>
+          )}
+          {rejectionReasons.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-[var(--border)]">
+              <p className="text-xs text-[var(--text-secondary)] mb-1.5">
+                Top reject reasons (last 7 days):
+              </p>
+              <ul className="space-y-1 text-sm">
+                {rejectionReasons.map((r, i) => (
+                  <li key={i} className="text-[var(--text-primary)]">
+                    <span className="text-[var(--text-secondary)]">{r.count}x</span> &mdash; {r.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 

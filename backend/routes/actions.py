@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from database import get_db
 
 router = APIRouter(tags=["actions"])
@@ -12,6 +12,13 @@ router = APIRouter(tags=["actions"])
 
 class ActionResponse(BaseModel):
     action_id: int
+
+
+class RejectRequest(BaseModel):
+    action_id: int
+    # Optional free-text reason the user gave for rejecting. Cap the length
+    # so a runaway client can't push arbitrary blobs into the DB.
+    reason: str | None = Field(default=None, max_length=500)
 
 
 @router.get("/actions/pending")
@@ -80,8 +87,8 @@ async def approve_action(req: ActionResponse):
 
 
 @router.post("/actions/reject")
-async def reject_action(req: ActionResponse):
-    """Reject a pending trade action."""
+async def reject_action(req: RejectRequest):
+    """Reject a pending trade action, optionally with a free-text reason."""
     db = await get_db()
     try:
         cursor = await db.execute(
@@ -93,10 +100,13 @@ async def reject_action(req: ActionResponse):
             return JSONResponse(content={"error": "Action not found or already resolved"}, status_code=404)
 
         now = datetime.now(timezone.utc).isoformat()
+        reason = req.reason.strip() if req.reason else None
+        if reason == "":
+            reason = None
 
         await db.execute(
-            "UPDATE pending_actions SET status = 'rejected', resolved_at = ? WHERE id = ?",
-            (now, req.action_id),
+            "UPDATE pending_actions SET status = 'rejected', resolved_at = ?, rejection_reason = ? WHERE id = ?",
+            (now, reason, req.action_id),
         )
 
         # Check if this was an override (rejecting agent's buy recommendation)
@@ -106,9 +116,12 @@ async def reject_action(req: ActionResponse):
                 (action["token_address"], "buy", "rejected", now),
             )
 
+        detail: dict[str, object] = {"action_id": req.action_id}
+        if reason:
+            detail["reason"] = reason
         await db.execute(
             "INSERT INTO activity (event_type, token_address, detail, created_at) VALUES (?, ?, ?, ?)",
-            ("reject", action["token_address"], json.dumps({"action_id": req.action_id}), now),
+            ("reject", action["token_address"], json.dumps(detail), now),
         )
         await db.commit()
 

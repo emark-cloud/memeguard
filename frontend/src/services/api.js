@@ -59,11 +59,14 @@ export const approveAction = (actionId) =>
     body: JSON.stringify({ action_id: actionId }),
   })
 
-export const rejectAction = (actionId) =>
+export const rejectAction = (actionId, reason = null) =>
   request('/actions/reject', {
     method: 'POST',
-    body: JSON.stringify({ action_id: actionId }),
+    body: JSON.stringify({ action_id: actionId, reason }),
   })
+
+export const getRejectionReasons = (days = 7, limit = 3) =>
+  request(`/overrides/rejection_reasons?days=${days}&limit=${limit}`)
 
 // Avoided
 export const getAvoided = (limit = 50) => request(`/avoided?limit=${limit}`)

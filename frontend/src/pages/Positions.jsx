@@ -38,9 +38,11 @@ export default function Positions() {
   }
 
   const handleReject = async (actionId) => {
+    const raw = window.prompt('Why are you rejecting this sell? (optional)')
+    const reason = raw ? raw.trim().slice(0, 500) : null
     setActionLoading(actionId)
     try {
-      await rejectAction(actionId)
+      await rejectAction(actionId, reason)
       await loadPositions()
     } catch (e) {
       console.error('Sell reject error:', e)

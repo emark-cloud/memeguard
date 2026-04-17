@@ -44,10 +44,14 @@ export default function OpportunityDetail() {
 
   const handleReject = async () => {
     if (!token?.pending_action) return
+    // Optional free-text reason. Cancel still proceeds with no reason — the
+    // prompt is a capture opportunity, not a gate.
+    const raw = window.prompt('Why are you rejecting this? (optional)')
+    const reason = raw ? raw.trim().slice(0, 500) : null
     setActionLoading(true)
     setActionError(null)
     try {
-      await rejectAction(token.pending_action.id)
+      await rejectAction(token.pending_action.id, reason)
       const data = await getToken(address)
       setToken(data)
     } catch (e) {
