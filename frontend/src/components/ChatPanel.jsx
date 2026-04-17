@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { sendChatMessage, clearChatHistory } from '../services/api'
+import { sendChatMessage, clearChatHistory, getChatHistory } from '../services/api'
 
 export default function ChatPanel({ tokenAddress = null, tokenName = null }) {
   const [messages, setMessages] = useState([])
@@ -11,6 +11,23 @@ export default function ChatPanel({ tokenAddress = null, tokenName = null }) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Load persisted history when the panel opens or token scope changes.
+  useEffect(() => {
+    if (!isOpen) return
+    let cancelled = false
+    getChatHistory(tokenAddress)
+      .then((rows) => {
+        if (cancelled) return
+        setMessages(rows.map((r) => ({ role: r.role, content: r.content })))
+      })
+      .catch(() => {
+        /* ignore — empty history is a valid state */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, tokenAddress])
 
   const handleSend = async () => {
     const text = input.trim()
@@ -36,7 +53,7 @@ export default function ChatPanel({ tokenAddress = null, tokenName = null }) {
   const handleClear = async () => {
     setMessages([])
     try {
-      await clearChatHistory()
+      await clearChatHistory(tokenAddress)
     } catch {
       /* ignore */
     }

@@ -7,13 +7,14 @@ The chat is context-aware: pulls token data, positions, persona config into prom
 import asyncio
 import json
 import time
+from datetime import datetime, timezone
+
 from database import get_db, get_all_config
 from services.llm_service import get_llm_service
 
 
-# Session message history (in-memory, resets on restart)
-_chat_history: list[dict] = []
-MAX_HISTORY = 20
+# Recent history window pulled into each prompt (3 user/assistant turns).
+RECENT_HISTORY_TURNS = 3
 
 # TTL cache for the rarely-changing config slice of chat context.
 # Persona and budget caps change on Settings saves, not per-message — refetching
@@ -99,20 +100,56 @@ async def _build_context(token_address: str | None = None) -> str:
     return "\n".join(parts)
 
 
+async def _load_recent_history(db, token_address: str | None, turns: int) -> list[dict]:
+    """Return last `turns` user/assistant pairs for this scope, oldest first.
+
+    `token_address IS NULL` scopes to global chat; a non-null value scopes to
+    that specific token's OpportunityDetail chat. NULLs don't compare with =
+    in SQL, so we pick the WHERE clause based on the scope.
+    """
+    limit = turns * 2
+    if token_address is None:
+        cursor = await db.execute(
+            "SELECT role, content FROM chat_messages "
+            "WHERE token_address IS NULL ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+    else:
+        cursor = await db.execute(
+            "SELECT role, content FROM chat_messages "
+            "WHERE token_address = ? ORDER BY id DESC LIMIT ?",
+            (token_address, limit),
+        )
+    rows = await cursor.fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+
+async def _append_history(db, token_address: str | None, role: str, content: str):
+    now = datetime.now(timezone.utc).isoformat()
+    await db.execute(
+        "INSERT INTO chat_messages (token_address, role, content, created_at) "
+        "VALUES (?, ?, ?, ?)",
+        (token_address, role, content, now),
+    )
+
+
 async def chat(message: str, token_address: str | None = None) -> str:
     """Process a chat message and return the AI advisor's response."""
-    global _chat_history
-
     llm = get_llm_service()
     if not llm.client:
         return "AI advisor is unavailable — no Gemini API key configured. Set GEMINI_API_KEY in your .env file."
 
     context = await _build_context(token_address)
 
-    # Build conversation with history
+    # Load recent history for this scope (global vs. per-token).
+    db = await get_db()
+    try:
+        recent = await _load_recent_history(db, token_address, RECENT_HISTORY_TURNS)
+    finally:
+        await db.close()
+
     history_text = ""
-    if _chat_history:
-        recent = _chat_history[-6:]  # last 6 messages (3 turns)
+    if recent:
         history_text = "\n".join(
             f"{'User' if m['role'] == 'user' else 'Advisor'}: {m['content']}"
             for m in recent
@@ -149,20 +186,38 @@ Guidelines:
             ),
         )
         reply = response.text.strip()
-
-        # Update history
-        _chat_history.append({"role": "user", "content": message})
-        _chat_history.append({"role": "assistant", "content": reply})
-        if len(_chat_history) > MAX_HISTORY * 2:
-            _chat_history = _chat_history[-MAX_HISTORY * 2:]
-
-        return reply
     except Exception as e:
         print(f"[ChatService] Error: {e}")
-        return f"Sorry, I encountered an error processing your question. Please try again."
+        return "Sorry, I encountered an error processing your question. Please try again."
+
+    # Persist both turns in a single short transaction so the next call sees
+    # them. We write even when the LLM succeeds; on failure we already returned.
+    db = await get_db()
+    try:
+        await _append_history(db, token_address, "user", message)
+        await _append_history(db, token_address, "assistant", reply)
+        await db.commit()
+    finally:
+        await db.close()
+
+    return reply
 
 
-def clear_chat_history():
-    """Clear the conversation history."""
-    global _chat_history
-    _chat_history = []
+async def clear_chat_history(token_address: str | None = None, scope: str = "current"):
+    """Clear chat history.
+
+    scope='current': clear just this scope (global OR a specific token).
+    scope='all':     clear every scope. Used when the caller passes no
+                     token_address and wants the whole store wiped.
+    """
+    db = await get_db()
+    try:
+        if scope == "all":
+            await db.execute("DELETE FROM chat_messages")
+        elif token_address is None:
+            await db.execute("DELETE FROM chat_messages WHERE token_address IS NULL")
+        else:
+            await db.execute("DELETE FROM chat_messages WHERE token_address = ?", (token_address,))
+        await db.commit()
+    finally:
+        await db.close()

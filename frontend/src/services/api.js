@@ -91,8 +91,16 @@ export const sendChatMessage = (message, tokenAddress = null) =>
     body: JSON.stringify({ message, token_address: tokenAddress }),
   })
 
-export const clearChatHistory = () =>
-  request('/chat/history', { method: 'DELETE' })
+export const getChatHistory = (tokenAddress = null) => {
+  const qs = tokenAddress ? `?token_address=${encodeURIComponent(tokenAddress)}` : ''
+  return request(`/chat/history${qs}`)
+}
+
+export const clearChatHistory = (tokenAddress = null, scope = 'current') => {
+  const params = new URLSearchParams({ scope })
+  if (tokenAddress) params.set('token_address', tokenAddress)
+  return request(`/chat/history?${params.toString()}`, { method: 'DELETE' })
+}
 
 // Override stats (behavioral nudge)
 export const getOverrideStats = () => request('/overrides/stats')

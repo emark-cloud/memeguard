@@ -1,6 +1,6 @@
 """AI advisor chat endpoint."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 router = APIRouter(tags=["chat"])
@@ -24,9 +24,39 @@ async def chat_endpoint(req: ChatRequest) -> ChatResponse:
     return ChatResponse(reply=reply)
 
 
+@router.get("/chat/history")
+async def get_history(token_address: str | None = Query(None)):
+    """Return persisted chat messages for the given scope (global if unset)."""
+    from database import get_db
+    db = await get_db()
+    try:
+        if token_address is None:
+            cursor = await db.execute(
+                "SELECT id, role, content, created_at FROM chat_messages "
+                "WHERE token_address IS NULL ORDER BY id ASC"
+            )
+        else:
+            cursor = await db.execute(
+                "SELECT id, role, content, created_at FROM chat_messages "
+                "WHERE token_address = ? ORDER BY id ASC",
+                (token_address,),
+            )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
 @router.delete("/chat/history")
-async def clear_history():
-    """Clear the chat conversation history."""
+async def clear_history(
+    token_address: str | None = Query(None),
+    scope: str = Query("current", pattern="^(current|all)$"),
+):
+    """Clear chat history.
+
+    Defaults to 'current': wipes either global chat (if token_address omitted)
+    or a single token's chat. Pass scope=all to wipe every scope.
+    """
     from services.chat_service import clear_chat_history
-    clear_chat_history()
+    await clear_chat_history(token_address=token_address, scope=scope)
     return {"status": "ok"}
