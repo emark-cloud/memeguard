@@ -2,8 +2,12 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { getApiKey } from '../services/api'
 
 // Browsers can't attach custom headers to WebSocket — pass the shared secret as ?key=.
+// In prod the frontend and backend are on different origins, so VITE_WS_URL points
+// at the backend directly (wss://...). Dev falls back to the Vite proxy at /ws.
 const _apiKey = getApiKey()
-const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws${_apiKey ? `?key=${encodeURIComponent(_apiKey)}` : ''}`
+const _wsBase = import.meta.env.VITE_WS_URL
+  || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
+const WS_URL = `${_wsBase}${_apiKey ? `?key=${encodeURIComponent(_apiKey)}` : ''}`
 
 export function useWebSocket() {
   const [messages, setMessages] = useState([])
