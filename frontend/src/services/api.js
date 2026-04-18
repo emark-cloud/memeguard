@@ -47,6 +47,9 @@ export const updateConfigBulk = (updates) =>
 export const getPositions = (status = 'active') =>
   request(`/positions?status=${status}`)
 
+export const sellPosition = (positionId) =>
+  request(`/positions/${positionId}/sell`, { method: 'POST' })
+
 // Activity
 export const getActivity = (limit = 50) => request(`/activity?limit=${limit}`)
 

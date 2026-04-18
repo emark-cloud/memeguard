@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getPositions, approveAction, rejectAction } from '../services/api'
+import { getPositions, approveAction, rejectAction, sellPosition } from '../services/api'
 
 export default function Positions() {
   const [positions, setPositions] = useState([])
@@ -51,6 +51,22 @@ export default function Positions() {
     }
   }
 
+  const handleManualSell = async (pos) => {
+    const label = pos.token_name || pos.token_symbol || pos.token_address.slice(0, 10) + '...'
+    if (!window.confirm(`Sell ${label}? This will execute on-chain immediately.`)) return
+    const key = `manual-${pos.id}`
+    setActionLoading(key)
+    try {
+      await sellPosition(pos.id)
+      await loadPositions()
+    } catch (e) {
+      console.error('Manual sell error:', e)
+      window.alert(`Sell failed: ${e.message || e}`)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   const pnlColor = (pnl) => {
     if (!pnl) return 'text-[var(--text-secondary)]'
     return pnl > 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'
@@ -94,6 +110,7 @@ export default function Positions() {
                 <th className="text-right px-4 py-3 font-medium">Amount</th>
                 <th className="text-right px-4 py-3 font-medium">PnL</th>
                 <th className="text-right px-4 py-3 font-medium">Status</th>
+                <th className="text-right px-4 py-3 font-medium">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -124,10 +141,21 @@ export default function Positions() {
                         {pos.status}
                       </span>
                     </td>
+                    <td className="text-right px-4 py-3">
+                      {pos.status === 'active' && !pos.pending_sell && (
+                        <button
+                          onClick={() => handleManualSell(pos)}
+                          disabled={actionLoading === `manual-${pos.id}`}
+                          className="px-3 py-1 bg-[#F6465D] text-white text-xs font-semibold rounded cursor-pointer hover:opacity-90 disabled:opacity-50"
+                        >
+                          {actionLoading === `manual-${pos.id}` ? 'Selling...' : 'Sell'}
+                        </button>
+                      )}
+                    </td>
                   </tr>
                   {pos.pending_sell && (
                     <tr className="border-b border-[var(--border)] bg-[rgba(246,70,93,0.05)]">
-                      <td colSpan={6} className="px-4 py-3">
+                      <td colSpan={7} className="px-4 py-3">
                         <div className="flex items-center justify-between">
                           <div className="flex-1 min-w-0">
                             <span className="text-xs font-semibold text-[#F6465D] mr-2">SELL PROPOSED</span>

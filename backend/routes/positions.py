@@ -1,8 +1,10 @@
 """Position tracking endpoints."""
 
+import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query
+from fastapi.responses import JSONResponse
 from database import get_db
 
 router = APIRouter(tags=["positions"])
@@ -47,6 +49,87 @@ async def list_positions(
         return positions
     finally:
         await db.close()
+
+
+@router.post("/positions/{position_id}/sell")
+async def manual_sell(position_id: int):
+    """User-initiated sell on an active position.
+
+    The click itself is the approval, so we create the pending_action, mark it
+    approved, and hand off to the executor in one request. If a sell is already
+    pending for this token, surface that action instead of racing a duplicate.
+    """
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM positions WHERE id = ? AND status = 'active'",
+            (position_id,),
+        )
+        position = await cursor.fetchone()
+        if not position:
+            return JSONResponse(
+                content={"error": "Position not found or not active"},
+                status_code=404,
+            )
+        pos = dict(position)
+
+        # Don't race the auto-propose path — if a sell is already pending,
+        # just return it so the client can reuse the existing approval flow.
+        cursor = await db.execute(
+            "SELECT id FROM pending_actions WHERE token_address = ? "
+            "AND action_type = 'sell' AND status = 'pending' "
+            "ORDER BY id DESC LIMIT 1",
+            (pos["token_address"],),
+        )
+        existing = await cursor.fetchone()
+        if existing:
+            return JSONResponse(
+                content={"error": "Sell already pending for this position",
+                         "action_id": existing["id"]},
+                status_code=409,
+            )
+
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = await db.execute(
+            """INSERT INTO pending_actions (token_address, action_type, amount_bnb, slippage,
+               persona, risk_score, rationale, tx_preview, status, resolved_at, created_at)
+               VALUES (?, 'sell', ?, 5.0, ?, ?, ?, ?, 'approved', ?, ?)""",
+            (
+                pos["token_address"],
+                pos.get("entry_amount_bnb", 0) or 0,
+                "manual",
+                pos.get("entry_risk_score", "") or "",
+                "[MANUAL] User-initiated sell from Positions page",
+                json.dumps({"token_amount": pos.get("token_quantity", 0) or 0}),
+                now,
+                now,
+            ),
+        )
+        action_id = cursor.lastrowid
+        cursor = await db.execute(
+            "SELECT * FROM pending_actions WHERE id = ?", (action_id,)
+        )
+        action = await cursor.fetchone()
+        action_dict = dict(action) if action else {}
+
+        await db.execute(
+            "INSERT INTO activity (event_type, token_address, detail, created_at) VALUES (?, ?, ?, ?)",
+            (
+                "approve",
+                pos["token_address"],
+                json.dumps({"action_id": action_id, "source": "manual"}),
+                now,
+            ),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    from main import ws_manager
+    from services.executor import execute_approved_action
+    result = await execute_approved_action(action_dict, ws_manager)
+
+    return {"status": "approved", "action_id": action_id, "result": result}
 
 
 @router.get("/trades/daily")
