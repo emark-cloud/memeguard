@@ -54,7 +54,7 @@ Expert review (70%) + Community voting (30%):
 ## 5. Project Structure
 
 ```
-meme-guard/
+FourScout/
 ├── backend/
 │   ├── main.py                  # FastAPI app + WebSocket + lifespan (scanner + position tracker tasks)
 │   ├── config.py                # Pydantic Settings from .env (loads .env then ../.env)

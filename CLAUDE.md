@@ -130,7 +130,7 @@ Grades: GREEN (>=65%), AMBER (40-65%), RED (<40%)
 ## Project Structure
 
 ```
-meme-guard/
+FourScout/
 ├── backend/
 │   ├── main.py              # FastAPI app + WebSocket + lifespan
 │   ├── config.py            # Pydantic Settings from .env
