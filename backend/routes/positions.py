@@ -5,7 +5,12 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 from database import get_db
+
+
+class ManualSellRequest(BaseModel):
+    sell_fraction: float | None = Field(default=None, gt=0, le=1)
 
 router = APIRouter(tags=["positions"])
 
@@ -52,7 +57,7 @@ async def list_positions(
 
 
 @router.post("/positions/{position_id}/sell")
-async def manual_sell(position_id: int):
+async def manual_sell(position_id: int, req: ManualSellRequest | None = None):
     """User-initiated sell on an active position.
 
     The click itself is the approval, so we create the pending_action, mark it
@@ -90,6 +95,8 @@ async def manual_sell(position_id: int):
             )
 
         now = datetime.now(timezone.utc).isoformat()
+        sell_fraction = req.sell_fraction if req and req.sell_fraction is not None else 1.0
+        preview = {"token_amount": pos.get("token_quantity", 0) or 0, "sell_fraction": sell_fraction}
         cursor = await db.execute(
             """INSERT INTO pending_actions (token_address, action_type, amount_bnb, slippage,
                persona, risk_score, rationale, tx_preview, status, resolved_at, created_at)
@@ -99,8 +106,8 @@ async def manual_sell(position_id: int):
                 pos.get("entry_amount_bnb", 0) or 0,
                 "manual",
                 pos.get("entry_risk_score", "") or "",
-                "[MANUAL] User-initiated sell from Positions page",
-                json.dumps({"token_amount": pos.get("token_quantity", 0) or 0}),
+                f"[MANUAL] User-initiated sell ({int(sell_fraction * 100)}%) from Positions page",
+                json.dumps(preview),
                 now,
                 now,
             ),

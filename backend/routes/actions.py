@@ -12,6 +12,11 @@ router = APIRouter(tags=["actions"])
 
 class ActionResponse(BaseModel):
     action_id: int
+    # Optional overrides set by the confirm-trade modal. For buy actions the
+    # user can adjust the proposed BNB amount; for sell actions they can
+    # choose to only sell a fraction (0 < f <= 1) of their holdings.
+    amount_bnb: float | None = Field(default=None, gt=0)
+    sell_fraction: float | None = Field(default=None, gt=0, le=1)
 
 
 class RejectRequest(BaseModel):
@@ -51,6 +56,37 @@ async def approve_action(req: ActionResponse):
 
         action_dict = dict(action)
         now = datetime.now(timezone.utc).isoformat()
+
+        # Apply confirm-modal overrides before execution.
+        if action_dict["action_type"] == "buy" and req.amount_bnb is not None:
+            from database import get_all_config
+            cfg = await get_all_config()
+            min_bnb = float(cfg.get("min_per_trade_bnb", 0.002))
+            max_bnb = float(cfg.get("max_per_trade_bnb", 0.05))
+            if req.amount_bnb < min_bnb or req.amount_bnb > max_bnb:
+                return JSONResponse(
+                    content={"error": f"amount_bnb must be between {min_bnb} and {max_bnb}"},
+                    status_code=400,
+                )
+            action_dict["amount_bnb"] = req.amount_bnb
+            await db.execute(
+                "UPDATE pending_actions SET amount_bnb = ? WHERE id = ?",
+                (req.amount_bnb, req.action_id),
+            )
+
+        if action_dict["action_type"] == "sell" and req.sell_fraction is not None:
+            # Stash the fraction in tx_preview so the executor can scale the
+            # on-chain balance without another round-trip.
+            try:
+                preview = json.loads(action_dict.get("tx_preview") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                preview = {}
+            preview["sell_fraction"] = req.sell_fraction
+            action_dict["tx_preview"] = json.dumps(preview)
+            await db.execute(
+                "UPDATE pending_actions SET tx_preview = ? WHERE id = ?",
+                (action_dict["tx_preview"], req.action_id),
+            )
 
         # Mark as approved
         await db.execute(

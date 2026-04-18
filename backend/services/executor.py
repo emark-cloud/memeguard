@@ -144,13 +144,17 @@ async def execute_approved_action(action: dict, ws_manager=None) -> dict:
             return {"status": "executed", "tx_hash": tx_hash, "position_id": position_id}
 
         elif action_type == "sell":
-            # Extract token amount from tx_preview
+            # Extract token amount + optional fraction override from tx_preview
             token_amount = 0.0
+            sell_fraction = 1.0
             tx_preview_str = action.get("tx_preview", "{}")
             if isinstance(tx_preview_str, str):
                 try:
                     preview = json.loads(tx_preview_str)
                     token_amount = float(preview.get("token_amount", 0))
+                    f = preview.get("sell_fraction")
+                    if f is not None:
+                        sell_fraction = max(0.0, min(1.0, float(f)))
                 except (json.JSONDecodeError, ValueError):
                     pass
 
@@ -162,10 +166,13 @@ async def execute_approved_action(action: dict, ws_manager=None) -> dict:
             web3_client = BSCWeb3Client()
             on_chain_balance = await asyncio.to_thread(web3_client.get_token_balance, token_address)
             if on_chain_balance and on_chain_balance > 0:
-                amount_wei = str(on_chain_balance)
-                token_amount = on_chain_balance / 10**18
+                scaled = int(on_chain_balance * sell_fraction)
+                if scaled <= 0:
+                    return {"status": "error", "message": f"sell_fraction {sell_fraction} rounds to zero tokens"}
+                amount_wei = str(scaled)
+                token_amount = scaled / 10**18
             else:
-                amount_wei = str(int(token_amount * 10**18))
+                amount_wei = str(int(token_amount * sell_fraction * 10**18))
 
             # Look up the active position
             cursor = await db.execute(

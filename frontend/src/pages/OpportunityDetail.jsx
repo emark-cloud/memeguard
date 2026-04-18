@@ -3,7 +3,8 @@ import { useParams, Link } from 'react-router-dom'
 import RiskBadge from '../components/RiskBadge'
 import RiskRadar from '../components/RiskRadar'
 import ChatPanel from '../components/ChatPanel'
-import { getToken, approveAction, rejectAction } from '../services/api'
+import ConfirmTradeModal from '../components/ConfirmTradeModal'
+import { getToken, approveAction, rejectAction, getConfig } from '../services/api'
 
 export default function OpportunityDetail() {
   const { address } = useParams()
@@ -11,6 +12,17 @@ export default function OpportunityDetail() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [tradeLimits, setTradeLimits] = useState({ min: 0.002, max: 0.05 })
+
+  useEffect(() => {
+    getConfig().then((cfg) => {
+      setTradeLimits({
+        min: parseFloat(cfg.min_per_trade_bnb || '0.002'),
+        max: parseFloat(cfg.max_per_trade_bnb || '0.05'),
+      })
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     async function load() {
@@ -26,17 +38,24 @@ export default function OpportunityDetail() {
     load()
   }, [address])
 
-  const handleApprove = async () => {
+  const handleApprove = () => {
+    if (!token?.pending_action) return
+    setActionError(null)
+    setConfirmOpen(true)
+  }
+
+  const handleConfirmTrade = async (overrides) => {
     if (!token?.pending_action) return
     setActionLoading(true)
     setActionError(null)
     try {
-      await approveAction(token.pending_action.id)
+      await approveAction(token.pending_action.id, overrides)
+      setConfirmOpen(false)
       const data = await getToken(address)
       setToken(data)
     } catch (e) {
       console.error('Approve error:', e)
-      setActionError('Failed to approve action. Please try again.')
+      setActionError(`Failed: ${e.message || 'Please try again.'}`)
     } finally {
       setActionLoading(false)
     }
@@ -269,6 +288,17 @@ export default function OpportunityDetail() {
 
       {/* Token-scoped AI chat */}
       <ChatPanel tokenAddress={token.address} tokenName={`${token.name} ($${token.symbol})`} />
+
+      <ConfirmTradeModal
+        open={confirmOpen}
+        mode={token.pending_action?.action_type === 'sell' ? 'sell' : 'buy'}
+        label={`${token.name || token.symbol || ''} (${(token.address || '').slice(0, 10)}...)`}
+        defaultAmountBnb={parseFloat(token.pending_action?.amount_bnb) || 0.01}
+        minBnb={tradeLimits.min}
+        maxBnb={tradeLimits.max}
+        onCancel={() => !actionLoading && setConfirmOpen(false)}
+        onConfirm={handleConfirmTrade}
+      />
     </div>
   )
 }

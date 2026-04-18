@@ -47,8 +47,11 @@ export const updateConfigBulk = (updates) =>
 export const getPositions = (status = 'active') =>
   request(`/positions?status=${status}`)
 
-export const sellPosition = (positionId) =>
-  request(`/positions/${positionId}/sell`, { method: 'POST' })
+export const sellPosition = (positionId, sellFraction = null) =>
+  request(`/positions/${positionId}/sell`, {
+    method: 'POST',
+    body: JSON.stringify(sellFraction != null ? { sell_fraction: sellFraction } : {}),
+  })
 
 export const abandonPosition = (positionId) =>
   request(`/positions/${positionId}/abandon`, { method: 'POST' })
@@ -59,11 +62,15 @@ export const getActivity = (limit = 50) => request(`/activity?limit=${limit}`)
 // Actions
 export const getPendingActions = () => request('/actions/pending')
 
-export const approveAction = (actionId) =>
-  request('/actions/approve', {
+export const approveAction = (actionId, overrides = {}) => {
+  const body = { action_id: actionId }
+  if (overrides.amount_bnb != null) body.amount_bnb = overrides.amount_bnb
+  if (overrides.sell_fraction != null) body.sell_fraction = overrides.sell_fraction
+  return request('/actions/approve', {
     method: 'POST',
-    body: JSON.stringify({ action_id: actionId }),
+    body: JSON.stringify(body),
   })
+}
 
 export const rejectAction = (actionId, reason = null) =>
   request('/actions/reject', {

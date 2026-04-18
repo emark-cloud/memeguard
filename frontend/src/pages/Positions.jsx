@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import ConfirmTradeModal from '../components/ConfirmTradeModal'
 import { getPositions, approveAction, rejectAction, sellPosition, abandonPosition } from '../services/api'
 
 export default function Positions() {
@@ -7,6 +8,9 @@ export default function Positions() {
   const [filter, setFilter] = useState('active')
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
+  // When set, renders the confirm-sell modal.
+  // Shape: { kind: 'manual' | 'pending', pos, actionId? }
+  const [sellTarget, setSellTarget] = useState(null)
 
   const loadPositions = async () => {
     try {
@@ -25,13 +29,30 @@ export default function Positions() {
     return () => clearInterval(interval)
   }, [filter])
 
-  const handleApprove = async (actionId) => {
-    setActionLoading(actionId)
+  const openPendingSellModal = (pos) => {
+    setSellTarget({ kind: 'pending', pos, actionId: pos.pending_sell.id })
+  }
+
+  const handleManualSell = (pos) => {
+    setSellTarget({ kind: 'manual', pos })
+  }
+
+  const handleConfirmSell = async ({ sell_fraction }) => {
+    if (!sellTarget) return
+    const { kind, pos, actionId } = sellTarget
+    const key = kind === 'manual' ? `manual-${pos.id}` : actionId
+    setActionLoading(key)
     try {
-      await approveAction(actionId)
+      if (kind === 'manual') {
+        await sellPosition(pos.id, sell_fraction)
+      } else {
+        await approveAction(actionId, { sell_fraction })
+      }
+      setSellTarget(null)
       await loadPositions()
     } catch (e) {
-      console.error('Sell approve error:', e)
+      console.error('Sell error:', e)
+      window.alert(`Sell failed: ${e.message || e}`)
     } finally {
       setActionLoading(null)
     }
@@ -46,22 +67,6 @@ export default function Positions() {
       await loadPositions()
     } catch (e) {
       console.error('Sell reject error:', e)
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
-  const handleManualSell = async (pos) => {
-    const label = pos.token_name || pos.token_symbol || pos.token_address.slice(0, 10) + '...'
-    if (!window.confirm(`Sell ${label}? This will execute on-chain immediately.`)) return
-    const key = `manual-${pos.id}`
-    setActionLoading(key)
-    try {
-      await sellPosition(pos.id)
-      await loadPositions()
-    } catch (e) {
-      console.error('Manual sell error:', e)
-      window.alert(`Sell failed: ${e.message || e}`)
     } finally {
       setActionLoading(null)
     }
@@ -191,7 +196,7 @@ export default function Positions() {
                           </div>
                           <div className="flex gap-2 ml-4 flex-shrink-0">
                             <button
-                              onClick={() => handleApprove(pos.pending_sell.id)}
+                              onClick={() => openPendingSellModal(pos)}
                               disabled={actionLoading === pos.pending_sell.id}
                               className="px-3 py-1 bg-[#F6465D] text-white text-xs font-semibold rounded cursor-pointer hover:opacity-90 disabled:opacity-50"
                             >
@@ -215,6 +220,20 @@ export default function Positions() {
           </table>
         </div>
       )}
+
+      <ConfirmTradeModal
+        open={!!sellTarget}
+        mode="sell"
+        label={
+          sellTarget
+            ? (sellTarget.pos.token_name || sellTarget.pos.token_symbol || sellTarget.pos.token_address.slice(0, 10) + '...')
+            : ''
+        }
+        onCancel={() => {
+          if (!actionLoading) setSellTarget(null)
+        }}
+        onConfirm={handleConfirmSell}
+      />
     </div>
   )
 }
