@@ -147,18 +147,33 @@ The backend listens on port 8000. The SQLite database persists to `./data/foursc
 
 The Dockerfile is deploy-platform-agnostic. On Railway:
 
-1. New project → Deploy from GitHub repo.
-2. Set env vars from `.env.example`.
-3. Attach a persistent volume mounted at `/app/data` for the SQLite file.
+1. New project → Deploy from GitHub repo (auto-detects the root `Dockerfile`).
+2. Attach a persistent volume mounted at `/app/data` for the SQLite file.
+3. Set environment variables:
+   ```
+   PRIVATE_KEY=<agent wallet hex private key>
+   GEMINI_API_KEY=<google gemini key>
+   API_KEY=<strong shared secret, e.g. `openssl rand -hex 24`>
+   BSC_RPC_URL=https://bsc-dataseed1.binance.org
+   DATABASE_PATH=/app/data/fourscout.db
+   ALLOWED_ORIGINS=https://<your-frontend>.vercel.app
+   ```
+4. Generate a public domain → note the URL (e.g. `https://fourscout-production.up.railway.app`).
+
+> `ALLOWED_ORIGINS` must **not** include a trailing slash — browsers never send one in the `Origin` header and Starlette's CORS matcher is exact-string.
 
 ### Frontend — Vercel
 
-```bash
-cd frontend
-vercel --prod
-```
+1. New project → Import the same GitHub repo → set **Root Directory** to `frontend`.
+2. Set environment variables (use the Railway URL from above):
+   ```
+   VITE_API_BASE_URL=https://<railway-url>/api
+   VITE_WS_URL=wss://<railway-url>/ws
+   VITE_API_KEY=<same value as backend API_KEY>
+   ```
+3. Deploy. Then circle back to Railway and update `ALLOWED_ORIGINS` to the real Vercel URL.
 
-Set `VITE_API_BASE` to your deployed backend URL in the Vercel dashboard. The frontend is a static SPA and does not need any server-side runtime.
+The frontend is a static SPA — no server-side runtime needed.
 
 ## Security Model
 

@@ -828,7 +828,7 @@ CREATE INDEX idx_signal_outcomes_grade ON signal_outcomes (entry_risk_grade, rec
 - [x] Backend Docker self-host (`Dockerfile` + `docker-compose.yml` + `.dockerignore`, SQLite volume persistence verified)
 - [x] Public marketing landing page at `/` with CTA to `/dashboard` (separate pitch surface from the operator dashboard)
 - [x] LLM cost reductions: per-position AI cooldown (15 min / 3% PnL delta), tighter drift bands, configurable cadence, output-token caps (commit `f4523b4`) — runtime verification blocked on refreshed Gemini credits
-- [ ] Deployment: provision Railway/Render (backend) + Vercel (frontend) for a live URL
+- [x] Deployment live (2026-04-18): backend on Railway `https://fourscout-production.up.railway.app` with persistent volume at `/app/data`; frontend on Vercel `https://four-scout.vercel.app`. CORS + shared-secret auth + WSS verified.
 
 #### Medium Priority (Completeness)
 - [x] Behavioral nudge: tracks overrides (approve RED / reject GREEN), shows outcome summary on Dashboard

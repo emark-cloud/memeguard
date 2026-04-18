@@ -182,7 +182,7 @@ meme-guard/
 - [x] ERC-8004 agent identity registration, "What I Avoided" tracker (live, 39+), risk radar chart, behavioral nudge, watchlist UI, real volume signal (wash-trading detection), visual polish, README, landing page
 - [x] Wallet-gated smoke test (8004 register + trade approve via MetaMask) — position_id 4, tx `0x8a9e…dbdb`
 - [x] Gemini cost-reduction pass (`f4523b4`) + live-LLM verification (2026-04-17, commit `b8ce0a5`)
-- [ ] Deployment (Docker artifacts added; Vercel + Railway/Render still to provision)
+- [x] Deployment live (2026-04-18): backend on Railway (`https://fourscout-production.up.railway.app`, persistent volume at `/app/data`), frontend on Vercel (`https://four-scout.vercel.app`). CORS + `API_KEY` auth + WSS verified end-to-end.
 - [ ] Demo video + DoraHacks BUIDL submission
 
 **Phase 3.5 — Agent Memory & Continuity (COMPLETE, commits `1896754..7bcb09a`):**
