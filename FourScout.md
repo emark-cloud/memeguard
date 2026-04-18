@@ -1208,4 +1208,18 @@ These are deliberately left unresolved. They become real decisions when implemen
 
 ---
 
+## 19. Future Directions
+
+Beyond the hosted multi-tenant work in §18, two directions are worth advertising as likely next expansions. Framed as directions, not committed phases — each closes a concrete gap in the current product.
+
+### 19.1 Telegram Bot Integration
+
+Crypto traders live in Telegram. A thin adapter at `backend/services/telegram_bot.py` would push `action_proposed`, `position_update`, and `avoided_update` events to a user-configured private channel, and accept `/approve <id>` / `/reject <id> "reason"` slash commands that call the existing REST endpoints. Reuses the shared-secret `API_KEY`, the `pending_actions` approval flow, and the `rejection_reason` plumbing shipped in Phase 3.5. Complexity is additive: one new service module, one `TELEGRAM_*` env triplet, no changes to existing code. Unlocks a mobile workflow without building a mobile app.
+
+### 19.2 Persona Auto-Tuning
+
+FourScout already captures override history, rejection reasons, and closed-position PnL — the raw material for feedback. The natural next step is a periodic aggregate (extending `backend/services/override_stats.py`) that scores how well each persona fits the user's actual behavior, and a Dashboard card that says *"Momentum fits your trading 72% better than Conservative — switch?"*. No new tables needed; all source data already persists. This closes the Phase 3.5 memory loop into a user-visible nudge — the exact expression of `input → reason → act → memory update` the Four.meme team AMA advocated for, applied to the user's own behavior rather than just the agent's.
+
+---
+
 *Built for the Four.Meme AI Sprint hackathon. MIT License.*

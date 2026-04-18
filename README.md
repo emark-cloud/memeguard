@@ -189,6 +189,14 @@ The next step toward a hosted, multi-user product is **non-custodial session key
 
 **Budget caps are enforced server-side regardless of deployment model** — max per trade, max per day, max active positions, slippage, cooldown. The `PRIVATE_KEY` can only spend what the rest of the stack authorizes.
 
+## Roadmap
+
+Three directions planned past the v1 MVP:
+
+- **Hosted multi-tenant without custody** — ZeroDev Kernel v3 smart accounts + `@zerodev/permissions` session keys on BSC, letting users grant the agent narrow, revocable, on-chain-enforced signing authority. Full design in [FourScout.md §18](./FourScout.md#18-roadmap-non-custodial-session-keys).
+- **Telegram bot integration** — push trade proposals, exits, and avoided-rug alerts to a private Telegram channel; approve or reject via slash commands. Unlocks mobile workflow without a mobile app. See [FourScout.md §19.1](./FourScout.md#191-telegram-bot-integration).
+- **Persona auto-tuning** — analyze override history + closed-position PnL, recommend persona adjustments when a user's actual behavior diverges from the configured persona. Closes the Phase 3.5 memory loop into a user-visible nudge. See [FourScout.md §19.2](./FourScout.md#192-persona-auto-tuning).
+
 ## Project Structure
 
 ```
