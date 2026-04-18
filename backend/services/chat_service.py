@@ -53,11 +53,17 @@ async def _build_context(token_address: str | None = None) -> str:
         if token_address:
             cursor = await db.execute("SELECT * FROM tokens WHERE address = ?", (token_address,))
             token = await cursor.fetchone()
+            token = dict(token) if token else {}
+            name = token.get("name") or "?"
+            symbol = token.get("symbol") or "?"
+            parts.append(
+                f'\nCurrently viewing token: {name} (${symbol}) at {token_address}'
+            )
+            parts.append(
+                'When the user says "this token", "it", or asks without naming a token, they mean the token above.'
+            )
             if token:
-                token = dict(token)
-                parts.append(f"\nToken: {token.get('name', '?')} (${token.get('symbol', '?')})")
-                parts.append(f"Address: {token_address}")
-                parts.append(f"Risk score: {token.get('risk_score', 'unscored')}")
+                parts.append(f"Risk score: {token.get('risk_score') or 'unscored (scan still in progress)'}")
                 parts.append(f"Bonding curve: {(token.get('bonding_curve_progress', 0) or 0) * 100:.1f}%")
                 parts.append(f"Graduated: {'Yes' if token.get('graduated') else 'No'}")
 
@@ -82,6 +88,8 @@ async def _build_context(token_address: str | None = None) -> str:
                 if action:
                     action = dict(action)
                     parts.append(f"\nPending action: {action['action_type']} {action.get('amount_bnb', 0)} BNB")
+            else:
+                parts.append("Risk score: unscored (token not yet in scan database)")
 
         # Recent avoided tokens for context
         cursor = await db.execute(
