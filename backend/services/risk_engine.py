@@ -540,9 +540,11 @@ async def score_token(token_address: str, ws_manager=None):
         rationale = f"{rationale}\n\n{history_line}"
 
     avoided_price = 0.0
+    avoided_funds_bnb = 0.0
     if result.grade == "red":
         info = await asyncio.to_thread(_get_web3().get_token_info, token_address)
         avoided_price = info.get("lastPrice", 0) / 10**18 if info.get("lastPrice") else 0
+        avoided_funds_bnb = (info.get("funds", 0) or 0) / 10**18
 
     # Phase 3: single short transaction for all writes.
     db = await get_db()
@@ -559,14 +561,15 @@ async def score_token(token_address: str, ws_manager=None):
         if result.grade == "red":
             await db.execute(
                 """INSERT OR IGNORE INTO avoided (token_address, token_name, risk_score, risk_rationale,
-                   price_at_flag, estimated_savings_bnb, flagged_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   price_at_flag, funds_at_flag_bnb, estimated_savings_bnb, flagged_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     token_address,
                     token_data.get("name", ""),
                     result.grade,
                     result.primary_risk,
                     avoided_price,
+                    avoided_funds_bnb,
                     0.05,  # default persona amount as estimated savings
                     now,
                 ),

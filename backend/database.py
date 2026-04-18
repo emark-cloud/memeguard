@@ -223,6 +223,10 @@ _COLUMN_MIGRATIONS = [
     ("pending_actions", "rejection_reason", "TEXT"),
     ("positions", "last_ai_check_at", "TEXT"),
     ("positions", "last_ai_pnl_pct", "REAL"),
+    # Captured at the moment an avoided (RED) token is flagged so the 24h
+    # check can detect abandonment by comparing bonding-curve funds delta,
+    # not just lastPrice (which sticks to the formula price on dead tokens).
+    ("avoided", "funds_at_flag_bnb", "REAL"),
 ]
 
 # Default configuration values

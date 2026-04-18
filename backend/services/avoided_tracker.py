@@ -117,9 +117,26 @@ async def _check_token_price(db, web3, ws_manager, token: dict, now: datetime):
 
     # Also check if liquidity was pulled (graduated then emptied)
     liquidity_added = info.get("liquidityAdded", False)
-    funds = info.get("funds", 0)
+    funds = info.get("funds", 0) or 0
+    current_funds_bnb = funds / 10**18
     if liquidity_added and funds == 0:
         is_rug = True
+
+    # Abandonment check at the 24h slot: on Four.meme the dominant "rug"
+    # pattern is a token that launches, nobody ever buys, and it sits dead
+    # on the bonding curve. lastPrice stays anchored at the curve's formula
+    # price so the price-based check can't see it. Compare the BNB collected
+    # by the curve instead — if it barely moved in 24h the token is dead.
+    if slot == "price_24h_later" and not liquidity_added:
+        funds_at_flag = token.get("funds_at_flag_bnb")
+        if funds_at_flag is not None:
+            funds_delta = current_funds_bnb - float(funds_at_flag)
+            # Threshold: collected less than 0.05 BNB of new buyer interest
+            # over 24 hours. Absolute funds don't matter — a token that
+            # started with 0.2 BNB and gained nothing is just as dead as
+            # one that started at zero.
+            if funds_delta < 0.05:
+                is_rug = True
 
     if is_rug and not token.get("confirmed_rug"):
         await db.execute(
