@@ -37,3 +37,8 @@ frontend/build/
 # Logs
 *.log
 fourmeme-cli/
+
+# Internal dev notes (kept locally, not tracked)
+COMPETITIVE_ANALYSIS.md
+HANDOFF.md
+TODO.md
