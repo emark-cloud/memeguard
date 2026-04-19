@@ -116,9 +116,19 @@ export default function Settings() {
               <div className="flex items-center justify-between">
                 <span className="text-sm text-[var(--text-secondary)]">Status</span>
                 {agentStatus.is_registered ? (
-                  <span className="text-xs px-2 py-0.5 rounded bg-[rgba(14,203,129,0.15)] text-[#0ECB81] font-medium">
-                    REGISTERED
-                  </span>
+                  <a
+                    href={
+                      agentStatus.erc8004_token_id != null
+                        ? `https://8004scan.io/agents/bsc/${agentStatus.erc8004_token_id}`
+                        : `https://8004scan.io/agents?search=${agentStatus.wallet_address}`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="View on 8004scan"
+                    className="text-xs px-2 py-0.5 rounded bg-[rgba(14,203,129,0.15)] text-[#0ECB81] font-medium no-underline hover:bg-[rgba(14,203,129,0.25)]"
+                  >
+                    REGISTERED ↗
+                  </a>
                 ) : (
                   <span className="text-xs px-2 py-0.5 rounded bg-[rgba(246,70,93,0.15)] text-[#F6465D] font-medium">
                     NOT REGISTERED

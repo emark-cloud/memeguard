@@ -52,11 +52,24 @@ async def get_agent_status() -> dict:
         asyncio.to_thread(web3.get_bnb_balance, address),
     )
 
+    # Token ID is persisted in config (seeded on register or manually for
+    # wallets registered before this feature landed). The ERC-8004 registry
+    # isn't enumerable and public BSC RPCs reject wide log scans, so we
+    # can't recover it cheaply on demand.
+    from database import get_all_config
+    cfg = await get_all_config()
+    token_id_raw = cfg.get("erc8004_token_id", "") or ""
+    try:
+        token_id = int(token_id_raw) if token_id_raw else None
+    except ValueError:
+        token_id = None
+
     return {
         "wallet_address": address,
         "is_registered": is_registered,
         "has_private_key": True,
         "bnb_balance": round(bnb_balance, 4),
+        "erc8004_token_id": token_id,
     }
 
 
@@ -74,10 +87,24 @@ async def register_agent(name: str, image_url: str | None = None, description: s
     cli = _get_cli()
     try:
         result = await cli.register_8004(name, image_url, description)
+        # Capture the minted NFT's token ID from the tx receipt so Settings
+        # can link straight to the agent's 8004scan page. Best-effort — a
+        # failure here shouldn't block the successful registration response.
+        token_id: int | None = None
+        if isinstance(result, dict):
+            tx_hash = result.get("txHash") or result.get("hash") or ""
+            if tx_hash:
+                token_id = await asyncio.to_thread(
+                    web3.parse_erc8004_mint_token_id, tx_hash, address
+                )
+        if token_id is not None:
+            from database import set_config_value
+            await set_config_value("erc8004_token_id", str(token_id))
         return {
             "success": True,
             "already_registered": False,
             "wallet_address": address,
+            "erc8004_token_id": token_id,
             "tx_result": result if isinstance(result, dict) else str(result),
         }
     except FourMemeError as e:

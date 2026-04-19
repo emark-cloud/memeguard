@@ -26,7 +26,7 @@ async def update_config(update: ConfigUpdate):
         "persona", "approval_mode", "min_per_trade_bnb", "max_per_trade_bnb",
         "max_per_day_bnb", "max_active_positions", "max_slippage_pct",
         "cooldown_seconds", "min_liquidity_usd", "take_profit_pct",
-        "stop_loss_pct", "auto_sell_enabled",
+        "stop_loss_pct", "auto_sell_enabled", "erc8004_token_id",
     }
     if update.key not in valid_keys:
         return JSONResponse(content={"error": f"Invalid config key. Valid keys: {sorted(valid_keys)}"}, status_code=400)
@@ -42,7 +42,7 @@ async def update_config_bulk(updates: dict):
         "persona", "approval_mode", "min_per_trade_bnb", "max_per_trade_bnb",
         "max_per_day_bnb", "max_active_positions", "max_slippage_pct",
         "cooldown_seconds", "min_liquidity_usd", "take_profit_pct",
-        "stop_loss_pct", "auto_sell_enabled",
+        "stop_loss_pct", "auto_sell_enabled", "erc8004_token_id",
     }
     invalid = [k for k in updates if k not in valid_keys]
     if invalid:

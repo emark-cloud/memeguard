@@ -242,6 +242,34 @@ class BSCWeb3Client:
         except Exception:
             return False
 
+    def parse_erc8004_mint_token_id(self, tx_hash: str, wallet_address: str) -> int | None:
+        """Extract the ERC-8004 agent NFT tokenId that was minted to
+        `wallet_address` inside the given transaction. The Identity Registry
+        is not ERC-721Enumerable and public BSC RPCs reject wide log scans,
+        so we only look at this specific receipt's logs. Returns None if
+        the mint log can't be located."""
+        try:
+            from hexbytes import HexBytes
+            owner = Web3.to_checksum_address(wallet_address)
+            receipt = self.w3.eth.get_transaction_receipt(HexBytes(tx_hash))
+            transfer_topic = "0x" + self.w3.keccak(text="Transfer(address,address,uint256)").hex().lstrip("0x")
+            zero_topic = "0x" + "0" * 64
+            owner_topic = "0x" + owner[2:].lower().rjust(64, "0")
+            for log in receipt["logs"]:
+                if log["address"].lower() != Contracts.ERC8004_IDENTITY_REGISTRY.lower():
+                    continue
+                topics: list[str] = []
+                for t in log["topics"]:
+                    s = t.hex() if hasattr(t, "hex") else str(t)
+                    topics.append("0x" + s.removeprefix("0x"))
+                if len(topics) >= 4 and topics[0].lower() == transfer_topic.lower() \
+                        and topics[1].lower() == zero_topic \
+                        and topics[2].lower() == owner_topic.lower():
+                    return int(topics[3], 16)
+            return None
+        except Exception:
+            return None
+
     def get_bnb_balance(self, address: str) -> float:
         """Get BNB balance in ether units."""
         try:

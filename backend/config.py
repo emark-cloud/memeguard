@@ -47,6 +47,9 @@ class Contracts:
     WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
     BRC8004_REGISTRY = "0xfA09B3397fAC75424422C4D28b1729E3D4f659D7"
     TOKEN_MANAGER_V1 = "0xEC4549caDcE5DA21Df6E6422d448034B5233bFbC"
+    # ERC-8004 standard Identity Registry (ERC-721Enumerable) — where
+    # `fourmeme 8004-register` actually mints the agent NFT.
+    ERC8004_IDENTITY_REGISTRY = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
 
 
 # Budget defaults

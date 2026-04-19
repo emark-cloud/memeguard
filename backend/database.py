@@ -243,6 +243,9 @@ DEFAULT_CONFIG = {
     "take_profit_pct": "100",
     "stop_loss_pct": "-50",
     "auto_sell_enabled": "false",
+    # ERC-8004 agent NFT token ID, captured from the registration tx receipt.
+    # Empty until the wallet registers via Settings.
+    "erc8004_token_id": "",
 }
 
 
