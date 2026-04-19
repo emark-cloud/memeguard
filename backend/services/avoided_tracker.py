@@ -1,8 +1,9 @@
 """What I Avoided — background job that tracks prices of red-flagged tokens
 to prove the agent's risk scoring was correct.
 
-Checks prices at ~1h, ~6h, ~24h after flagging.
-Detects confirmed rugs (price drop > 90% or liquidity pulled).
+Checks each token once at ~12h after flagging (stored in the legacy
+`price_24h_later` column so no schema migration is required).
+Detects confirmed rugs (price drop > 90%, liquidity pulled, or abandonment).
 Calculates estimated savings based on persona trade amounts.
 """
 
@@ -32,16 +33,12 @@ async def check_avoided_tokens(web3: BSCWeb3Client, ws_manager):
     """Check price updates for all avoided tokens that still need tracking."""
     db = await get_db()
     try:
-        # Get tokens that still need price checks (missing 1h, 6h, or 24h data).
-        # ORDER BY ASC (oldest first): under sustained flag volume a DESC order
-        # starves older rows — LIMIT 20 keeps pulling the newest flags whose
-        # slots aren't due yet, so rows that are actually past 1h/6h/24h never
-        # get checked. Oldest-first ensures due slots get filled first.
+        # Get tokens that still need the 12h price check. Oldest-first so rows
+        # that are actually past 12h get filled before the newest flags that
+        # aren't due yet.
         cursor = await db.execute(
             """SELECT * FROM avoided
-               WHERE price_1h_later IS NULL
-                  OR price_6h_later IS NULL
-                  OR price_24h_later IS NULL
+               WHERE price_24h_later IS NULL
                ORDER BY flagged_at ASC
                LIMIT 20"""
         )
@@ -76,19 +73,10 @@ async def _check_token_price(db, web3, ws_manager, token: dict, now: datetime):
 
     age_minutes = (now - flagged_dt).total_seconds() / 60
 
-    # Determine which price slot to fill by matching the *current* age bucket,
-    # not "first empty slot". If the backend was down for 24h, a token with
-    # age_minutes=1500 and all slots NULL would otherwise fill 1h with a
-    # 24h-old price, poisoning the signal.
-    slot = None
-    if age_minutes >= 1440 and token["price_24h_later"] is None:
-        slot = "price_24h_later"
-    elif 360 <= age_minutes < 1440 and token["price_6h_later"] is None:
-        slot = "price_6h_later"
-    elif 60 <= age_minutes < 360 and token["price_1h_later"] is None:
-        slot = "price_1h_later"
-    if slot is None:
-        return  # Not time yet, already filled, or the window was missed
+    # Single 12h check (stored in the legacy price_24h_later column).
+    if age_minutes < 720 or token["price_24h_later"] is not None:
+        return
+    slot = "price_24h_later"
 
     # Get current price from on-chain
     info = await asyncio.to_thread(web3.get_token_info, token["token_address"])
@@ -126,20 +114,20 @@ async def _check_token_price(db, web3, ws_manager, token: dict, now: datetime):
     if liquidity_added and funds == 0:
         is_rug = True
 
-    # Abandonment check at the 24h slot: on Four.meme the dominant "rug"
+    # Abandonment check at the 12h mark: on Four.meme the dominant "rug"
     # pattern is a token that launches, nobody ever buys, and it sits dead
     # on the bonding curve. lastPrice stays anchored at the curve's formula
     # price so the price-based check can't see it. Compare the BNB collected
-    # by the curve instead — if it barely moved in 24h the token is dead.
-    if slot == "price_24h_later" and not liquidity_added:
+    # by the curve instead — if it barely moved in 12h the token is dead.
+    if not liquidity_added:
         funds_at_flag = token.get("funds_at_flag_bnb")
         if funds_at_flag is not None:
             funds_delta = current_funds_bnb - float(funds_at_flag)
-            # Threshold: collected less than 0.05 BNB of new buyer interest
-            # over 24 hours. Absolute funds don't matter — a token that
+            # Threshold: collected less than 0.025 BNB of new buyer interest
+            # over 12 hours. Absolute funds don't matter — a token that
             # started with 0.2 BNB and gained nothing is just as dead as
             # one that started at zero.
-            if funds_delta < 0.05:
+            if funds_delta < 0.025:
                 is_rug = True
 
     if is_rug and not token.get("confirmed_rug"):
@@ -198,17 +186,16 @@ async def _check_token_price(db, web3, ws_manager, token: dict, now: datetime):
 
             print(f"[AvoidedTracker] Confirmed rug: {token.get('token_name', '')} ({token['token_address'][:10]}...)")
 
-    # When the 24h slot fills, record a signal_outcomes row. Runs regardless
-    # of rug confirmation so we capture "flagged but survived" datapoints too.
-    if slot == "price_24h_later":
-        try:
-            from services.signal_outcomes import record_avoided_24h
-            await record_avoided_24h(
-                token["token_address"],
-                token.get("risk_score", "") or "",
-                price_change_pct_val,
-                is_rug,
-                now.isoformat(),
-            )
-        except Exception as e:
-            print(f"[AvoidedTracker] signal_outcomes write failed: {e}")
+    # Record a signal_outcomes row regardless of rug confirmation so we
+    # capture "flagged but survived" datapoints too.
+    try:
+        from services.signal_outcomes import record_avoided_24h
+        await record_avoided_24h(
+            token["token_address"],
+            token.get("risk_score", "") or "",
+            price_change_pct_val,
+            is_rug,
+            now.isoformat(),
+        )
+    except Exception as e:
+        print(f"[AvoidedTracker] signal_outcomes write failed: {e}")
