@@ -1,9 +1,9 @@
 """What I Avoided — background job that tracks prices of red-flagged tokens
 to prove the agent's risk scoring was correct.
 
-Checks each token once at ~12h after flagging (stored in the legacy
-`price_24h_later` column so no schema migration is required).
-Detects confirmed rugs (price drop > 90%, liquidity pulled, or abandonment).
+Checks each token once at ~24h after flagging (stored in the
+`price_24h_later` column).
+Detects confirmed rugs (price drop > 90% or liquidity pulled).
 Calculates estimated savings based on persona trade amounts.
 """
 
@@ -33,8 +33,8 @@ async def check_avoided_tokens(web3: BSCWeb3Client, ws_manager):
     """Check price updates for all avoided tokens that still need tracking."""
     db = await get_db()
     try:
-        # Get tokens that still need the 12h price check. Oldest-first so rows
-        # that are actually past 12h get filled before the newest flags that
+        # Get tokens that still need the 24h price check. Oldest-first so rows
+        # that are actually past 24h get filled before the newest flags that
         # aren't due yet.
         cursor = await db.execute(
             """SELECT * FROM avoided
@@ -77,8 +77,8 @@ async def _check_token_price(db, web3, ws_manager, token: dict, now: datetime):
 
     age_minutes = (now - flagged_dt).total_seconds() / 60
 
-    # Single 12h check (stored in the legacy price_24h_later column).
-    if age_minutes < 720 or token["price_24h_later"] is not None:
+    # Single 24h check.
+    if age_minutes < 1440 or token["price_24h_later"] is not None:
         return
     slot = "price_24h_later"
 
@@ -114,25 +114,8 @@ async def _check_token_price(db, web3, ws_manager, token: dict, now: datetime):
     # Also check if liquidity was pulled (graduated then emptied)
     liquidity_added = info.get("liquidityAdded", False)
     funds = info.get("funds", 0) or 0
-    current_funds_bnb = funds / 10**18
     if liquidity_added and funds == 0:
         is_rug = True
-
-    # Abandonment check at the 12h mark: on Four.meme the dominant "rug"
-    # pattern is a token that launches, nobody ever buys, and it sits dead
-    # on the bonding curve. lastPrice stays anchored at the curve's formula
-    # price so the price-based check can't see it. Compare the BNB collected
-    # by the curve instead — if it barely moved in 12h the token is dead.
-    if not liquidity_added:
-        funds_at_flag = token.get("funds_at_flag_bnb")
-        if funds_at_flag is not None:
-            funds_delta = current_funds_bnb - float(funds_at_flag)
-            # Threshold: collected less than 0.025 BNB of new buyer interest
-            # over 12 hours. Absolute funds don't matter — a token that
-            # started with 0.2 BNB and gained nothing is just as dead as
-            # one that started at zero.
-            if funds_delta < 0.025:
-                is_rug = True
 
     if is_rug and not token.get("confirmed_rug"):
         await db.execute(
