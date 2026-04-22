@@ -868,30 +868,6 @@ CREATE INDEX idx_signal_outcomes_grade ON signal_outcomes (entry_risk_grade, rec
 
 ---
 
-## 12. Demo Script (3–4 minutes)
-
-This is the narrative arc a judge will see:
-
-**Scene 1 — Setup (30s)**
-Open the app. Connect wallet. Register as ERC-8004 agent (show the on-chain tx — proves Four.meme integration depth). Choose "Momentum" persona. Set 0.5 BNB daily cap. Approve-each mode.
-
-**Scene 2 — Scanning (45s)**
-Dashboard lights up with live Four.meme launches. Each token card shows name, launch age, bonding curve progress, and a green/amber/red risk badge. Point out a red-scored token: "This creator launched 3 tokens yesterday — all rugged within 2 hours. Agent automatically flags this."
-
-**Scene 3 — Opportunity + AI Advisor (75s)**
-Agent highlights a green-scored token. Click into the detail page. Show the risk radar chart and full 8-signal breakdown. Read the multi-signal narrative: "First-time creator with organic social activity. Volume is consistent, not wash-traded. No cross-signal red flags detected." Open the AI advisor chat and ask: "Why does the Momentum persona want to buy this?" — advisor explains the specific signals that triggered the buy recommendation. Click "Approve."
-
-**Scene 4 — Execution (30s)**
-Transaction preview shows exact swap details. Sign with wallet. TX confirms on BSC. Position appears in the portfolio view with entry price and live PnL.
-
-**Scene 5 — What I Avoided (45s)**
-Switch to the "What I Avoided" tab. Show 4 tokens the agent flagged red earlier in the session. Two have already dropped 90%+. One had liquidity pulled entirely. Running tally: "Avoided 3 confirmed rugs — estimated savings: 0.15 BNB." This is the moment the judge goes "oh, that's useful."
-
-**Scene 6 — Close (15s)**
-Back to dashboard. Show the behavioral summary: "1 trade executed. 3 rugs avoided. 0 overrides." End with tagline: "FourScout — your AI sentinel for Four.meme."
-
----
-
 ## 13. What Makes This Hackathon-Worthy
 
 ### Judging Criteria Alignment
