@@ -1014,9 +1014,6 @@ FourScout/
 ├── FourScout.md                   # This file — full MVP specification
 ├── CLAUDE.md                      # Project reference for development
 ├── README.md                      # Setup, architecture, deployment, security model
-├── HANDOFF.md                     # Session handoff notes
-├── COMPETITIVE_ANALYSIS.md        # Comparison with other BSC memecoin tooling
-├── TODO.md                        # Phase tracking + verification punch list
 ├── .env.example
 └── .gitignore
 ```
@@ -1047,23 +1044,6 @@ AI_EXIT_INTERVAL_CYCLES=10    # Position-tracker cycles between AI exit checks (
 ```
 
 Contract addresses are hardcoded in `backend/config.py` (Contracts class) — not environment variables, since they don't change between environments.
-
----
-
-## 17. Minimal Viable Demo (If Time Runs Short)
-
-If Phase 3 gets cut, the minimum viable submission is:
-
-- Dashboard with live Four.meme token feed (DONE)
-- Risk scoring with green/amber/red badges, all 8 signals (DONE)
-- All three personas working with action decisions (DONE)
-- Activity feed showing what the agent did (DONE)
-- Transaction preview + approval + execution (Phase 2, in progress)
-- Position tracking with PnL (Phase 2, in progress)
-- **Interactive AI advisor chat** (Phase 2 — highest Innovation differentiator)
-- **ERC-8004 agent registration** (Phase 3 — low effort, high Four.meme signal)
-
-That alone is a complete agentic product with AI depth, on-chain action, and deep Four.meme integration. The "What I Avoided" log is the highest-impact Phase 3 item — prioritize it over visual polish. The AI advisor and ERC-8004 are the two features most likely to differentiate from other submissions.
 
 ---
 
